@@ -24,12 +24,11 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 
 ## Architecture
 
-- Flat layout: modules and packages sit at the repo root and import each other directly (`from model import APRecord`), not through a `twinwatch` package. New top-level modules or packages must be added to `[tool.setuptools]` in `pyproject.toml`.
-- `model.py` owns the shared schema. Every source (live scan, lab, AWID3, WiGLE, synthetic) converts to `Snapshot`/`APRecord`; features and detectors must not branch on source.
+- `twinwatch/model.py` owns the shared schema. Every source (live scan, lab, AWID3, WiGLE, synthetic) converts to `Snapshot`/`APRecord`; features and detectors must not branch on source.
 - Fields a source cannot provide are `None` (nmcli: beacon_interval, capabilities, tsf). Features must handle `None`.
 - `APRecord.security` is a tuple of protocols from `SECURITY_RANK`; `security_rank` gives the strongest, used for downgrade detection.
 - Labels live on `APRecord.label` (`benign` / `evil_twin` / None). A cloned-BSSID twin is told apart by `bssid@freq`.
-- Recordings are JSON Lines, one snapshot per line (`recording.py`).
+- Recordings are JSON Lines, one snapshot per line (`twinwatch/recording.py`).
 - Detectors (`naive`, `weighted`, `ml`) share one interface so evaluation can swap them.
 
 ## Evaluation discipline

@@ -10,10 +10,9 @@ from pathlib import Path
 
 from rich.console import Console
 
-import recording
-import report
-from model import BENIGN, EVIL_TWIN, APRecord, Snapshot
-from scan import BACKENDS, ScanError, default_interface, scan
+from twinwatch import recording, report
+from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot
+from twinwatch.scan import BACKENDS, ScanError, default_interface, scan
 
 console = Console()
 

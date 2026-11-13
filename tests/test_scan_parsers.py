@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from scan import iw, nmcli
+from twinwatch.scan import iw, nmcli
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

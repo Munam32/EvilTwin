@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from rich.table import Table
 
-from model import APRecord
+from twinwatch.model import APRecord
 
 
 def _opt(value) -> str:

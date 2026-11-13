@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from model import Snapshot
+from twinwatch.model import Snapshot
 
 
 def append(path: Path, snapshot: Snapshot) -> None:

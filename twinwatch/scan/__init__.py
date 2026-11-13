@@ -8,8 +8,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from model import Snapshot
-from scan import iw, nmcli
+from twinwatch.model import Snapshot
+from twinwatch.scan import iw, nmcli
 
 BACKENDS = ("auto", "iw", "nmcli")
 # Drop cached iw entries older than this; they are APs no longer in range.

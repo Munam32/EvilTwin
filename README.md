@@ -142,17 +142,18 @@ twinwatch record -o data/lab/open_run01.jsonl --ssid CampusNet --scenario open -
 ## Project layout
 
 ```
-model.py          shared schema: APRecord, Snapshot
-recording.py      JSONL snapshot recordings
-scan/             iw and nmcli parsers, scan runner, monitor mode (planned)
-report.py         terminal output
-cli.py            twinwatch command
-store.py          baselines (planned)
-features.py       feature extraction (planned)
-cluster.py        DBSCAN (planned)
-detectors/        naive, weighted, ml (planned)
-datasets/         AWID3, WiGLE, synthetic converters (planned)
-evaluation/       training and metrics (planned)
+twinwatch/
+  model.py        shared schema: APRecord, Snapshot
+  recording.py    JSONL snapshot recordings
+  scan/           iw and nmcli parsers, scan runner, monitor mode (planned)
+  report.py       terminal output
+  cli.py          twinwatch command
+  store.py        baselines (planned)
+  features.py     feature extraction (planned)
+  cluster.py      DBSCAN (planned)
+  detectors/      naive, weighted, ml (planned)
+  datasets/       AWID3, WiGLE, synthetic converters (planned)
+  evaluation/     training and metrics (planned)
 tests/            pytest suite with recorded scan fixtures
 data/lab/         lab recordings
 ```

@@ -1,8 +1,8 @@
 import pytest
 
-import recording
-from cli import label_snapshot
-from model import BENIGN, EVIL_TWIN, APRecord, Snapshot, channel_from_freq
+from twinwatch import recording
+from twinwatch.cli import label_snapshot
+from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot, channel_from_freq
 
 
 def ap(bssid, ssid="CampusNet", freq=2412, **kw):

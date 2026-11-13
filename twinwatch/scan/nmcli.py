@@ -6,7 +6,7 @@ capability bits or TSF, and reports signal as 0-100 percent.
 
 from __future__ import annotations
 
-from model import APRecord
+from twinwatch.model import APRecord
 
 FIELDS = "BSSID,SSID,FREQ,SIGNAL,SECURITY,WPA-FLAGS,RSN-FLAGS"
 
