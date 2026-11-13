@@ -29,7 +29,8 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 - `APRecord.security` is a tuple of protocols from `SECURITY_RANK`; `security_rank` gives the strongest, used for downgrade detection.
 - Labels live on `APRecord.label` (`benign` / `evil_twin` / None). A cloned-BSSID twin is told apart by `bssid@freq`.
 - Recordings are JSON Lines, one snapshot per line (`twinwatch/recording.py`).
-- Detectors (`naive`, `weighted`, `ml`) share one interface so evaluation can swap them.
+- `twinwatch/features.py` owns the signal list (`SIGNALS`, fixed order = ML feature order). Detectors never read APRecords directly.
+- A detector is a scorer `signals -> (score 0..1, reasons)` registered in `detectors.DETECTORS`; `detectors.assess` turns scores into Safe / Suspicious / Likely verdicts (0.4 / 0.75). The ML detector must plug in the same way.
 
 ## Evaluation discipline
 

@@ -38,7 +38,7 @@ flowchart LR
     end
 
     SNAP["Snapshot / APRecord<br/>shared schema"]
-    STORE[("SQLite<br/>baselines + history")]
+    STORE[("SQLite<br/>baselines")]
     FEAT["Feature extractor"]
 
     subgraph Detectors
@@ -132,12 +132,42 @@ Use `.[dev]` alone for the scanner and tests without the ML stack.
 
 ## Usage
 
+| Command | What it does |
+|---|---|
+| `twinwatch scan [--ssid S]` | Scan once and list APs |
+| `twinwatch learn --ssid S` | Learn the trusted baseline (6 scans, 10 s apart) and save it to SQLite. `--force` replaces an existing one |
+| `twinwatch watch --ssid S` | Scan every 15 s, show a risk table, raise desktop alerts and log them |
+| `twinwatch record -o FILE` | Record scans to JSON Lines for datasets and replay |
+| `twinwatch replay FILE` | Run a detector over a recording and count verdicts per label |
+
 ```bash
-twinwatch scan --ssid CampusNet
+twinwatch learn --ssid CampusNet
+twinwatch watch --ssid CampusNet --detector weighted
 twinwatch record -o data/lab/open_run01.jsonl --ssid CampusNet --scenario open --evil 02:00:00:aa:bb:cc --count 30
+twinwatch replay data/lab/open_run01.jsonl --learn-scans 5 --detector naive
 ```
 
-`--evil BSSID@FREQ` labels a twin that clones the real BSSID on another frequency.
+- Learn only on a network you already trust: a baseline learned next to an attacker trusts the attacker.
+- `--detector` is `naive` (any new BSSID is an attack) or `weighted` (hand-weighted signals). The ML detector comes later.
+- `--evil BSSID@FREQ` labels a twin that clones the real BSSID on another frequency.
+- `replay --learn-scans N` builds the baseline from the first N snapshots of the file instead of the database.
+- Baselines live in `~/.local/share/twinwatch/twinwatch.db`; alerts are logged to `~/.local/share/twinwatch/alerts.log`.
+
+### Risk levels
+
+Each AP of the trusted SSID gets a score from 0 to 1: Safe below 0.4, Suspicious from 0.4, Likely evil twin from 0.75. The table lists the signals that fired:
+
+| Signal | Meaning |
+|---|---|
+| `new_bssid` | BSSID not in the baseline |
+| `oui_change` | Vendor prefix not used by any baseline AP |
+| `security_downgrade` | Weaker security than the baseline (e.g. WPA2 to open) |
+| `security_mismatch` | Different security protocol or key management |
+| `channel_jump` | Known BSSID on a frequency it never used (cloned BSSID) |
+| `channel_unseen` | Frequency no baseline AP used |
+| `signal_jump` | Signal over 10 dB stronger than expected |
+| `beacon_mismatch` | Beacon interval differs from the baseline |
+| `capability_mismatch` | Capability bits differ from the baseline |
 
 ## Project layout
 
@@ -146,12 +176,13 @@ twinwatch/
   model.py        shared schema: APRecord, Snapshot
   recording.py    JSONL snapshot recordings
   scan/           iw and nmcli parsers, scan runner, monitor mode (planned)
-  report.py       terminal output
+  baseline.py     baseline fingerprint of a trusted SSID
+  report.py       risk tables, desktop alerts, alert log
   cli.py          twinwatch command
-  store.py        baselines (planned)
-  features.py     feature extraction (planned)
+  store.py        SQLite baseline store
+  features.py     signals per AP against the baseline
   cluster.py      DBSCAN (planned)
-  detectors/      naive, weighted, ml (planned)
+  detectors/      naive and weighted rules; ml (planned)
   datasets/       AWID3, WiGLE, synthetic converters (planned)
   evaluation/     training and metrics (planned)
 tests/            pytest suite with recorded scan fixtures
