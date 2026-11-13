@@ -1,0 +1,81 @@
+BSS 02:00:00:00:01:01(on wlan0) -- associated
+	last seen: 7712.345s [boottime]
+	TSF: 123456789012 usec (1d, 10:17:36)
+	freq: 2412.0
+	beacon interval: 100 TUs
+	capability: ESS Privacy ShortSlotTime RadioMeasure (0x1411)
+	signal: -42.00 dBm
+	last seen: 120 ms ago
+	Information elements from Probe Response frame:
+	SSID: CampusNet
+	Supported rates: 1.0* 2.0* 5.5* 11.0* 6.0 9.0 12.0 18.0
+	DS Parameter set: channel 1
+	RSN:	 * Version: 1
+		 * Group cipher: CCMP
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: PSK
+		 * Capabilities: 1-PTKSA-RC 1-GTKSA-RC (0x0000)
+	Information elements from Beacon frame:
+	SSID: CampusNet
+BSS 02:00:00:00:01:02(on wlan0)
+	TSF: 99887766 usec (0d, 00:01:39)
+	freq: 5180
+	beacon interval: 100 TUs
+	capability: ESS Privacy SpectrumMgmt (0x0111)
+	signal: -67.00 dBm
+	last seen: 800 ms ago
+	SSID: CampusNet
+	RSN:	 * Version: 1
+		 * Group cipher: CCMP
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: PSK SAE
+		 * Capabilities: 16-PTKSA-RC 1-GTKSA-RC MFP-capable (0x00a8)
+BSS 02:00:00:00:02:01(on wlan0)
+	freq: 2437
+	beacon interval: 102 TUs
+	capability: ESS ShortSlotTime (0x0401)
+	signal: -55.00 dBm
+	last seen: 300 ms ago
+	SSID: CampusNet
+BSS 02:00:00:00:03:01(on wlan0)
+	freq: 2462
+	beacon interval: 100 TUs
+	capability: ESS Privacy ShortSlotTime (0x0411)
+	signal: -71.00 dBm
+	last seen: 1000 ms ago
+	SSID: Legacy\xc3\xa9
+	WPA:	 * Version: 1
+		 * Group cipher: TKIP
+		 * Pairwise ciphers: TKIP CCMP
+		 * Authentication suites: PSK
+	RSN:	 * Version: 1
+		 * Group cipher: TKIP
+		 * Pairwise ciphers: TKIP CCMP
+		 * Authentication suites: PSK
+		 * Capabilities: 1-PTKSA-RC 1-GTKSA-RC (0x0000)
+BSS 02:00:00:00:04:01(on wlan0)
+	freq: 2422
+	beacon interval: 100 TUs
+	capability: ESS Privacy (0x0011)
+	signal: -80.00 dBm
+	last seen: 2000 ms ago
+	SSID: OldWep
+BSS 02:00:00:00:05:01(on wlan0)
+	freq: 5745
+	beacon interval: 100 TUs
+	capability: ESS Privacy (0x0011)
+	signal: -60.00 dBm
+	last seen: 500 ms ago
+	SSID: CorpSecure
+	RSN:	 * Version: 1
+		 * Group cipher: CCMP
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: IEEE 802.1X
+		 * Capabilities: 1-PTKSA-RC 1-GTKSA-RC (0x0000)
+BSS 02:00:00:00:06:01(on wlan0)
+	freq: 2412
+	beacon interval: 100 TUs
+	capability: ESS (0x0001)
+	signal: -88.00 dBm
+	last seen: 95000 ms ago
+	SSID: GoneAway

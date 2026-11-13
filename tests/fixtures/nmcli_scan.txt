@@ -1,0 +1,5 @@
+02\:00\:00\:00\:01\:01:CampusNet:2412 MHz:79:WPA2:(none):pair_ccmp group_ccmp psk
+02\:00\:00\:00\:01\:02:CampusNet:5180 MHz:66:WPA2 WPA3:(none):pair_ccmp group_ccmp psk sae
+02\:00\:00\:00\:02\:01:CampusNet:2437 MHz:90::(none):(none)
+02\:00\:00\:00\:03\:01:Cafe\:Guest:2462 MHz:58:WPA1 WPA2:pair_tkip pair_ccmp group_tkip psk:pair_tkip pair_ccmp group_tkip psk
+02\:00\:00\:00\:05\:01:CorpSecure:5745 MHz:80:WPA2 802.1X:(none):pair_ccmp group_ccmp 802.1X
