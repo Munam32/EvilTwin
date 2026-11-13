@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from twinwatch.model import APRecord
+from twinwatch.model import APRecord, derive_security
 
 _BSS = re.compile(r"^BSS ([0-9a-fA-F:]{17})", re.M)
 _FREQ = re.compile(r"^\s*freq: ([\d.]+)", re.M)
@@ -43,7 +43,9 @@ def _normalize_akm(suite: str) -> str:
         return "SAE"
     if "OWE" in s:
         return "OWE"
-    if "802.1X" in s or "SUITE-B" in s:
+    if "SUITE-B" in s:
+        return "EAP-SUITE-B"
+    if "802.1X" in s:
         return "EAP"
     return "PSK"
 
@@ -65,33 +67,31 @@ def _parse_block(block: str) -> APRecord | None:
     tsf = _TSF.search(block)
     capabilities = int(capab.group(1), 16) if capab else None
 
-    security: set[str] = set()
     akm: set[str] = set()
     pairwise: set[str] = set()
-    for ie_name in ("RSN", "WPA"):
-        ie = _ie_block(block, ie_name)
+    rsn_akm: set[str] = set()
+    ies = {name: _ie_block(block, name) for name in ("RSN", "WPA")}
+    for name, ie in ies.items():
         if ie is None:
             continue
-        suites = [_normalize_akm(s) for s in _ie_field(ie, "Authentication suites")]
-        akm.update(suites)
+        suites = {_normalize_akm(s) for s in _ie_field(ie, "Authentication suites")}
+        akm |= suites
+        if name == "RSN":
+            rsn_akm = suites
         pairwise.update(_ie_field(ie, "Pairwise ciphers"))
-        if ie_name == "WPA":
-            security.add("WPA")
-        else:
-            if any(s in ("SAE", "OWE") for s in suites) or "SUITE-B" in ie.upper():
-                security.add("WPA3")
-            if any(s in ("PSK", "EAP") for s in suites) or not suites:
-                security.add("WPA2")
-    if not security:
-        privacy = capabilities is not None and capabilities & PRIVACY_BIT
-        security.add("WEP" if privacy else "OPEN")
+    security = derive_security(
+        wpa=ies["WPA"] is not None,
+        rsn=ies["RSN"] is not None,
+        rsn_akm=rsn_akm,
+        privacy=bool(capabilities is not None and capabilities & PRIVACY_BIT),
+    )
 
     return APRecord(
         bssid=bssid.group(1),
         ssid=_decode_ssid(ssid.group(1)) if ssid else "",
         freq_mhz=round(float(freq.group(1))),
         signal_dbm=float(signal.group(1)) if signal else None,
-        security=tuple(sorted(security)),
+        security=security,
         akm=tuple(sorted(akm)),
         pairwise=tuple(sorted(pairwise)),
         beacon_interval=int(beacon.group(1)) if beacon else None,

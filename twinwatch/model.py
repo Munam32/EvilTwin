@@ -16,6 +16,26 @@ BENIGN = "benign"
 EVIL_TWIN = "evil_twin"
 
 
+def derive_security(wpa: bool, rsn: bool, rsn_akm: set[str], privacy: bool) -> tuple[str, ...]:
+    """Security protocols from the WPA/RSN elements an AP advertises.
+
+    `rsn_akm` holds normalized AKM names (PSK, SAE, EAP, EAP-SUITE-B, OWE)
+    from the RSN element only. Without WPA or RSN, the privacy capability bit
+    means WEP.
+    """
+    security = set()
+    if wpa:
+        security.add("WPA")
+    if rsn:
+        if rsn_akm & {"SAE", "OWE", "EAP-SUITE-B"}:
+            security.add("WPA3")
+        if rsn_akm & {"PSK", "EAP"} or not rsn_akm:
+            security.add("WPA2")
+    if not security:
+        security.add("WEP" if privacy else "OPEN")
+    return tuple(sorted(security))
+
+
 def channel_from_freq(freq_mhz: int) -> int:
     if freq_mhz == 2484:
         return 14

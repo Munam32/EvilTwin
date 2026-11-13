@@ -28,6 +28,8 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 - Fields a source cannot provide are `None` (nmcli: beacon_interval, capabilities, tsf). Features must handle `None`.
 - `APRecord.security` is a tuple of protocols from `SECURITY_RANK`; `security_rank` gives the strongest, used for downgrade detection.
 - Labels live on `APRecord.label` (`benign` / `evil_twin` / None). A cloned-BSSID twin is told apart by `bssid@freq`.
+- Security protocols are derived in one place, `model.derive_security`, from normalized AKM names (PSK, SAE, EAP, EAP-SUITE-B, OWE). Every parser (iw, AWID3) normalizes to those names and calls it.
+- AWID3 converter (`twinwatch/datasets/awid3.py`) reads tshark field-name columns from a CSV or from `tshark` on a pcap. Field names were checked against Wireshark's display-filter reference; real AWID3 column names and label values are still unverified until the dataset arrives.
 - Recordings are JSON Lines, one snapshot per line (`twinwatch/recording.py`).
 - `twinwatch/features.py` owns the signal list (`SIGNALS`, fixed order = ML feature order). Detectors never read APRecords directly.
 - A detector is a scorer `signals -> (score 0..1, reasons)` registered in `detectors.DETECTORS`; `detectors.assess` turns scores into Safe / Suspicious / Likely verdicts (0.4 / 0.75). The ML detector must plug in the same way.

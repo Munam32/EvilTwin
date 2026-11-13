@@ -77,6 +77,17 @@ Every source is converted into the same `Snapshot` of `APRecord`s, so features a
 
 Raw data lives in `data/raw/` and is not committed. Lab recordings live in `data/lab/`.
 
+### Converting AWID3
+
+```bash
+python -m twinwatch.datasets.awid3 data/raw/awid3/Evil_Twin.csv -o data/processed/awid3/evil_twin.jsonl
+```
+
+- Input is an AWID3 CSV or pcap. A pcap is read through `tshark`; a CSV is read directly and needs the tshark field-name columns `frame.time_epoch`, `wlan.fc.type_subtype`, `wlan.bssid`, `wlan.ssid` and `radiotap.channel.freq` (or `wlan_radio.frequency`). The converter names any missing column; then convert the matching pcap instead.
+- Only beacons and probe responses are used. Frames are grouped into 10 s windows (`--window`), one snapshot per window, like one scan cycle.
+- Labels: `Normal` becomes `benign`, `Evil_Twin` becomes `evil_twin`, and other AWID3 attack classes stay unlabelled. Pcaps carry no labels.
+- The output is a normal recording, so `twinwatch replay` works on it.
+
 ## Install
 
 Tested on Ubuntu with Python 3.12. Kali works with the same packages.
@@ -183,7 +194,7 @@ twinwatch/
   features.py     signals per AP against the baseline
   cluster.py      DBSCAN (planned)
   detectors/      naive and weighted rules; ml (planned)
-  datasets/       AWID3, WiGLE, synthetic converters (planned)
+  datasets/       AWID3 converter; WiGLE and synthetic (planned)
   evaluation/     training and metrics (planned)
 tests/            pytest suite with recorded scan fixtures
 data/lab/         lab recordings

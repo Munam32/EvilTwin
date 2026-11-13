@@ -2,7 +2,8 @@ import pytest
 
 from twinwatch import recording
 from twinwatch.cli import label_snapshot
-from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot, channel_from_freq
+from twinwatch.model import (BENIGN, EVIL_TWIN, APRecord, Snapshot, channel_from_freq,
+                             derive_security)
 
 
 def ap(bssid, ssid="CampusNet", freq=2412, **kw):
@@ -54,3 +55,17 @@ def test_label_snapshot_by_bssid_and_freq():
     labelled = label_snapshot(snap, "CampusNet", ["02:00:00:00:00:01@2462"])
 
     assert [a.label for a in labelled.aps] == [BENIGN, EVIL_TWIN, None]
+
+
+@pytest.mark.parametrize("wpa,rsn,akm,privacy,security", [
+    (False, True, {"PSK"}, True, ("WPA2",)),
+    (False, True, {"PSK", "SAE"}, True, ("WPA2", "WPA3")),
+    (False, True, {"EAP-SUITE-B"}, True, ("WPA3",)),
+    (False, True, {"OWE"}, True, ("WPA3",)),
+    (False, True, set(), True, ("WPA2",)),
+    (True, True, {"PSK"}, True, ("WPA", "WPA2")),
+    (False, False, set(), True, ("WEP",)),
+    (False, False, set(), False, ("OPEN",)),
+])
+def test_derive_security(wpa, rsn, akm, privacy, security):
+    assert derive_security(wpa, rsn, akm, privacy) == security
