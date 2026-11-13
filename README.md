@@ -88,6 +88,40 @@ python -m twinwatch.datasets.awid3 data/raw/awid3/Evil_Twin.csv -o data/processe
 - Labels: `Normal` becomes `benign`, `Evil_Twin` becomes `evil_twin`, and other AWID3 attack classes stay unlabelled. Pcaps carry no labels.
 - The output is a normal recording, so `twinwatch replay` works on it.
 
+### Downloading WiGLE data
+
+Put your WiGLE API name and token (from https://wigle.net/account) in `.env`, copied from `.env.example`. `.env` is gitignored.
+
+```bash
+python -m twinwatch.datasets.wigle download --ssid CampusNet --bbox 31.40,31.60,74.20,74.45 -o data/raw/wigle/campusnet.json
+python -m twinwatch.datasets.wigle convert data/raw/wigle/campusnet.json -o data/processed/wigle/campusnet.jsonl
+```
+
+- `--bbox` is `LAT1,LAT2,LON1,LON2`. Always bound the area: WiGLE limits searches per day, and a common SSID matches millions of networks. `--max-results` defaults to 1000.
+- WiGLE keeps one record per BSSID, not scans over time. The converter groups an SSID's APs into ~110 m grid cells; each cell with 2+ APs becomes one snapshot, roughly what one laptop scan would see.
+- WiGLE has no signal strength, key management or capability bits, and records with unknown channel or encryption are dropped.
+
+### Generating synthetic scenarios
+
+```bash
+python -m twinwatch.datasets.synth data/processed/wigle/*.jsonl data/lab/benign_*.jsonl -o data/processed/synthetic.jsonl --seed 0
+```
+
+Each benign base (a WiGLE cell or a benign recording) becomes one session per scenario: 6 clean scans for the baseline, then 6 scans with the scenario's AP added.
+
+| Scenario | Added AP | Label |
+|---|---|---|
+| `benign_steady` | none | benign |
+| `benign_new_ap` | new BSSID with the network's vendor prefix and settings | benign |
+| `same_security` | new BSSID, other vendor, same security, same channel as the strongest AP | evil_twin |
+| `open_network` | same as above but open (no encryption) | evil_twin |
+| `stronger_signal` | same security, 15–25 dB stronger than the strongest AP | evil_twin |
+| `cloned_bssid` | the strongest AP's BSSID on a channel the network does not use | evil_twin |
+
+- Half of the twins copy the real AP's beacon interval and capability bits (a careful attacker); the rest use hostapd defaults.
+- A twin only gets fields its base has, so WiGLE-based twins have no capability bits or TSF either. WiGLE bases get simulated signal levels, flagged as `simulated_rssi` in each snapshot's metadata.
+- Sessions are tagged in snapshot metadata (`session`, `scenario`, `learn_scans`). Synthetic data is for training only; it measures nothing about real attacks.
+
 ## Install
 
 Tested on Ubuntu with Python 3.12. Kali works with the same packages.
@@ -194,7 +228,7 @@ twinwatch/
   features.py     signals per AP against the baseline
   cluster.py      DBSCAN (planned)
   detectors/      naive and weighted rules; ml (planned)
-  datasets/       AWID3 converter; WiGLE and synthetic (planned)
+  datasets/       AWID3 and WiGLE converters, synthetic scenario generator
   evaluation/     training and metrics (planned)
 tests/            pytest suite with recorded scan fixtures
 data/lab/         lab recordings
