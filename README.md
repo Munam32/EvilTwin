@@ -337,4 +337,4 @@ See [SECURITY.md](SECURITY.md) for reporting vulnerabilities, known limitations 
 
 ## License
 
-MIT. See [LICENSE.md](LICENSE.md).
+MIT. See [LICENSE](LICENSE).
