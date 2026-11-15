@@ -329,6 +329,12 @@ data/lab/         lab recordings (stored on DagsHub, not in git)
 .venv/bin/pytest
 ```
 
-## Safety
+## Safety and security
 
 All attack scenarios run only on the team's own router and laptops. Scanning public spaces is passive beacon listening only. The hostapd test AP is a lab instrument; this repository ships no evil twin kit.
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities, known limitations and responsible use.
+
+## License
+
+MIT. See [LICENSE.md](LICENSE.md).
