@@ -75,7 +75,30 @@ Every source is converted into the same `Snapshot` of `APRecord`s, so features a
 | Synthetic | Attack scenarios missing from AWID3, built by perturbing benign baselines |
 | Own lab (hostapd on own devices) | Held-out test set only, 5–10 runs per scenario |
 
-All data lives under `data/` (`raw/`, `processed/`, `lab/`) and is stored on DagsHub, not in git. Git ignores everything in `data/`. Lab recordings include nearby networks' names and MAC addresses, so keep the DagsHub repository private.
+All data lives under `data/` (`raw/`, `processed/`, `lab/`) and is versioned with DVC on a private DagsHub repository, not in git. Git tracks only the small pointer files (`data/lab.dvc` and so on). Lab recordings include nearby networks' names and MAC addresses, so the DagsHub repository must stay private.
+
+### Data with DVC and DagsHub
+
+Put `DAGSHUB_NAME` and `DAGSHUB_TOKEN` in `.env` (see `.env.example`). After cloning, connect once and download the data:
+
+```bash
+.venv/bin/dvc remote modify origin --local auth basic
+set -a; . ./.env; set +a
+.venv/bin/dvc remote modify origin --local user "$DAGSHUB_NAME"
+.venv/bin/dvc remote modify origin --local password "$DAGSHUB_TOKEN"
+.venv/bin/dvc pull
+```
+
+The credentials go to `.dvc/config.local`, which DVC keeps out of git. After adding or changing data:
+
+```bash
+.venv/bin/dvc add data/lab
+git add data/lab.dvc
+git commit -m "data: new lab recordings"
+.venv/bin/dvc push
+```
+
+Use the same for `data/raw` and `data/processed` once they exist. A new folder under `data/` also needs its own line in `.gitignore`.
 
 ### Converting AWID3
 

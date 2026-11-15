@@ -20,7 +20,7 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 - Passive only. Never add code that transmits deauthentication, disassociation, jamming or any attack frame, and never decrypt or inspect user traffic.
 - The hostapd lab AP is not part of this repo. Do not add an evil twin kit.
 - Test fixtures use locally administered MACs (`02:00:00:...`) and invented SSIDs, never real nearby networks.
-- Everything under `data/` (raw, processed, lab) is stored on DagsHub only, never in git: AWID3/WiGLE are licence-restricted and lab recordings contain nearby networks' SSIDs and MACs. Never suggest `git add` for data files. `.env` holds API credentials and stays gitignored.
+- Everything under `data/` (raw, processed, lab) is stored on DagsHub only, never in git: AWID3/WiGLE are licence-restricted and lab recordings contain nearby networks' SSIDs and MACs. Never suggest `git add` for data files. Data is versioned with DVC (`dvc add data/<folder>`, commit the `.dvc` pointer, `dvc push`) to the private DagsHub repo `Munam32/TwinWatch`. `.gitignore` lists data folders by name because DVC misreads `/data/*` and then ignores the `.dvc` files. `.env` holds API credentials and stays gitignored.
 
 ## Architecture
 

@@ -16,7 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 eval = ["pandas>=2.0", "matplotlib>=3.8"]
 monitor = ["scapy>=2.5"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "dvc>=3"]
 
 [project.scripts]
 twinwatch = "twinwatch.cli:main"

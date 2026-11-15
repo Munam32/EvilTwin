@@ -4,12 +4,14 @@ __pycache__/
 .pytest_cache/
 .env
 
-# All datasets are stored on DagsHub, never in git. Lab recordings also hold
-# nearby networks' names and MACs; AWID3 and WiGLE are licence-restricted.
-/data/*
-!/data/lab/
-/data/lab/*
-!/data/lab/.gitkeep
+# All datasets are stored on DagsHub through DVC, never in git. Lab recordings
+# hold nearby networks' names and MACs; AWID3 and WiGLE are licence-restricted.
+# Git tracks only DVC's pointer files (data/*.dvc). Folders are listed by name:
+# DVC misreads wildcard patterns like /data/* and stops seeing the .dvc files.
+# Add a line here for any new folder under data/.
+/data/lab/
+/data/raw/
+/data/processed/
 *.pcap
 *.pcapng
 
