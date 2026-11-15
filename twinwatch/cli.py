@@ -14,7 +14,8 @@ from rich.console import Console
 
 from twinwatch import baseline as baseline_mod
 from twinwatch import recording, report
-from twinwatch.detectors import DETECTORS, SAFE, assess
+from twinwatch.detectors import NAMES, SAFE, assess, make_scorer
+from twinwatch.detectors.ml import DEFAULT_MODEL, ModelError
 from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot
 from twinwatch.scan import BACKENDS, ScanError, default_interface, scan
 from twinwatch.store import Store, data_dir, default_db
@@ -99,7 +100,7 @@ def _load_baseline(db: Path, ssid: str) -> baseline_mod.Baseline:
 
 def cmd_watch(args: argparse.Namespace) -> None:
     baseline = _load_baseline(args.db, args.ssid)
-    scorer = DETECTORS[args.detector]
+    scorer = make_scorer(args.detector, args.model)
     alerter = report.Alerter(args.log, desktop=not args.no_notify)
     console.print(f"Watching {args.ssid!r} with the {args.detector} detector, every "
                   f"{args.interval:.0f}s. Alerts log: {args.log}. Ctrl+C to stop.")
@@ -129,7 +130,7 @@ def cmd_replay(args: argparse.Namespace) -> None:
     else:
         baseline = _load_baseline(args.db, ssid)
 
-    scorer = DETECTORS[args.detector]
+    scorer = make_scorer(args.detector, args.model)
     outcomes: Counter[tuple[str, str]] = Counter()
     for i, snap in enumerate(snaps, 1):
         verdicts = assess(scorer, snap, baseline)
@@ -158,7 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--db", type=Path, default=default_db(), help="baseline database")
 
     def detector_option(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--detector", choices=sorted(DETECTORS), default="weighted")
+        p.add_argument("--detector", choices=NAMES, default="weighted")
+        p.add_argument("--model", type=Path, default=DEFAULT_MODEL, help="trained model for --detector ml")
 
     p = sub.add_parser("scan", help="scan once and print the APs")
     scan_options(p)
@@ -211,7 +213,7 @@ def main(argv: list[str] | None = None) -> None:
         if getattr(args, "interface", "unset") is None:
             args.interface = default_interface()
         args.func(args)
-    except ScanError as e:
+    except (ScanError, ModelError) as e:
         sys.exit(f"error: {e}")
     except KeyboardInterrupt:
         pass

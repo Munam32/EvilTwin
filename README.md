@@ -217,7 +217,7 @@ twinwatch replay data/lab/open_run01.jsonl --learn-scans 5 --detector naive
 ```
 
 - Learn only on a network you already trust: a baseline learned next to an attacker trusts the attacker.
-- `--detector` is `naive` (any new BSSID is an attack) or `weighted` (hand-weighted signals). The ML detector comes later.
+- `--detector` is `naive` (any new BSSID is an attack), `weighted` (hand-weighted signals) or `ml` (Random Forest; needs a trained model, `--model`, default `models/twinwatch_rf.joblib`).
 - `--evil BSSID@FREQ` labels a twin that clones the real BSSID on another frequency.
 - `replay --learn-scans N` builds the baseline from the first N snapshots of the file instead of the database.
 - Baselines live in `~/.local/share/twinwatch/twinwatch.db`; alerts are logged to `~/.local/share/twinwatch/alerts.log`.
@@ -249,6 +249,17 @@ python -m twinwatch.cluster tune data/processed/synthetic.jsonl data/lab/*.jsonl
 
 A cloned BSSID shares the real AP's vendor prefix and stays inside the cluster; the `channel_jump` signal covers it.
 
+### Training the ML detector
+
+```bash
+python -m twinwatch.evaluation.train data/processed/synthetic*.jsonl data/processed/awid3/*.jsonl data/lab/benign_*.jsonl
+```
+
+- Every labelled AP seen after a session's baseline becomes one row of the 12 signals; a Random Forest (300 trees, balanced classes) learns evil twin vs benign.
+- Cross-validation groups rows by origin (source recording and SSID), never by session or row, because synthetic sessions from one source share its devices. The table compares the out-of-fold ML scores with the naive and weighted rules on the same rows, and reports the synthetic share of the data.
+- The model is saved with the signal list it was trained on, so a model from an older signal set is refused. Explanations list the fired signals by feature importance.
+- `models/` is gitignored; track it with DVC like the data. Never train on the lab attack sessions: they are the test set.
+
 ## Project layout
 
 ```
@@ -262,9 +273,9 @@ twinwatch/
   store.py        SQLite baseline store
   features.py     signals per AP against the baseline
   cluster.py      DBSCAN grouping of trusted APs, eps tuning
-  detectors/      naive and weighted rules; ml (planned)
+  detectors/      naive and weighted rules, Random Forest (ml)
   datasets/       AWID3 and WiGLE converters, synthetic scenario generator
-  evaluation/     training and metrics (planned)
+  evaluation/     train.py (ML training); metrics (planned)
 tests/            pytest suite with recorded scan fixtures
 data/lab/         lab recordings (stored on DagsHub, not in git)
 ```

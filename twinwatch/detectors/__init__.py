@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from twinwatch import features
 from twinwatch.baseline import Baseline
@@ -21,10 +22,20 @@ SUSPICIOUS_AT, LIKELY_AT = 0.4, 0.75
 # A scorer returns (score in 0..1, signals that drove the score).
 Scorer = Callable[[dict[str, float]], tuple[float, tuple[str, ...]]]
 
+# Rule detectors need nothing to run; the ML detector needs a trained model.
 DETECTORS: dict[str, Scorer] = {
     "naive": naive.score,
     "weighted": weighted.score,
 }
+NAMES = (*DETECTORS, "ml")
+
+
+def make_scorer(name: str, model_path: Path | None = None) -> Scorer:
+    if name == "ml":
+        from twinwatch.detectors.ml import DEFAULT_MODEL, MLScorer
+
+        return MLScorer.load(model_path or DEFAULT_MODEL)
+    return DETECTORS[name]
 
 
 @dataclass(frozen=True)

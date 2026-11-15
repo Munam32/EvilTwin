@@ -36,7 +36,7 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 - `twinwatch/features.py` owns the signal list (`SIGNALS`, fixed order = ML feature order). Detectors never read APRecords directly.
 - `twinwatch/cluster.py`: DBSCAN over trusted baseline APs, `min_samples` fixed at 1 (trusted APs are never noise), `EPS` from `python -m twinwatch.cluster tune`. Its signals (`cluster_outlier`, `cluster_distance`) feed only the ML detector; the weighted rule ignores signals it has no weight for. `NUMERIC` signals are never listed as reasons.
 - `recording.sessions` groups snapshots by (session, SSID); use it for any train/test split.
-- A detector is a scorer `signals -> (score 0..1, reasons)` registered in `detectors.DETECTORS`; `detectors.assess` turns scores into Safe / Suspicious / Likely verdicts (0.4 / 0.75). The ML detector must plug in the same way.
+- A detector is a scorer `signals -> (score 0..1, reasons)` registered in `detectors.DETECTORS`; `detectors.assess` turns scores into Safe / Suspicious / Likely verdicts (0.4 / 0.75). The ML detector plugs in the same way through `detectors.make_scorer("ml", model_path)`; `twinwatch/evaluation/train.py` trains it, grouping CV folds by origin (`meta["origin"]|ssid`), never by session, because synthetic sessions from one source share its devices.
 
 ## Evaluation discipline
 
