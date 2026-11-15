@@ -75,7 +75,7 @@ Every source is converted into the same `Snapshot` of `APRecord`s, so features a
 | Synthetic | Attack scenarios missing from AWID3, built by perturbing benign baselines |
 | Own lab (hostapd on own devices) | Held-out test set only, 5–10 runs per scenario |
 
-Raw data lives in `data/raw/` and is not committed. Lab recordings live in `data/lab/`.
+All data lives under `data/` (`raw/`, `processed/`, `lab/`) and is stored on DagsHub, not in git. Git ignores everything in `data/`. Lab recordings include nearby networks' names and MAC addresses, so keep the DagsHub repository private.
 
 ### Converting AWID3
 
@@ -159,16 +159,17 @@ Without `iw`, TwinWatch falls back to `nmcli`, which lacks beacon interval, capa
 | Package | Install group | Needed for |
 |---|---|---|
 | `rich` | core | Terminal tables and output |
-| `numpy`, `scikit-learn` (≥1.4), `pandas`, `matplotlib` | `ml` | DBSCAN, Random Forest, evaluation tables and charts |
+| `numpy`, `scikit-learn` (≥1.4) | core | DBSCAN clustering, Random Forest |
+| `pandas`, `matplotlib` | `eval` | Evaluation tables and charts |
 | `scapy` | `monitor` | Optional monitor-mode beacon capture |
 | `pytest` | `dev` | Test suite |
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e '.[ml,monitor,dev]'
+.venv/bin/pip install -e '.[eval,monitor,dev]'
 ```
 
-Use `.[dev]` alone for the scanner and tests without the ML stack.
+Use `.[dev]` alone for the tool and tests without the evaluation and monitor-mode extras.
 
 ### Hardware
 
@@ -213,6 +214,17 @@ Each AP of the trusted SSID gets a score from 0 to 1: Safe below 0.4, Suspicious
 | `signal_jump` | Signal over 10 dB stronger than expected |
 | `beacon_mismatch` | Beacon interval differs from the baseline |
 | `capability_mismatch` | Capability bits differ from the baseline |
+| `cluster_outlier` | Device fingerprint not within reach of any DBSCAN cluster of trusted APs (ML detector only) |
+
+### DBSCAN grouping
+
+The trusted APs are clustered by device fingerprint: vendor prefix, security profile, beacon interval and capability bits. The distance is the mean of per-attribute differences, from 0 (identical) to 1, and attributes a source lacks are skipped. A new AP more than `eps` = 0.2 from every trusted AP is an outlier, so a twin that differs only in vendor prefix (distance 0.25) is caught. Every trusted AP anchors its own cluster (`min_samples` = 1), so a router plus an extender from another vendor is two clusters with no false outlier. Re-tune `eps` on labelled recordings with:
+
+```bash
+python -m twinwatch.cluster tune data/processed/synthetic.jsonl data/lab/*.jsonl
+```
+
+A cloned BSSID shares the real AP's vendor prefix and stays inside the cluster; the `channel_jump` signal covers it.
 
 ## Project layout
 
@@ -226,12 +238,12 @@ twinwatch/
   cli.py          twinwatch command
   store.py        SQLite baseline store
   features.py     signals per AP against the baseline
-  cluster.py      DBSCAN (planned)
+  cluster.py      DBSCAN grouping of trusted APs, eps tuning
   detectors/      naive and weighted rules; ml (planned)
   datasets/       AWID3 and WiGLE converters, synthetic scenario generator
   evaluation/     training and metrics (planned)
 tests/            pytest suite with recorded scan fixtures
-data/lab/         lab recordings
+data/lab/         lab recordings (stored on DagsHub, not in git)
 ```
 
 ## Tests

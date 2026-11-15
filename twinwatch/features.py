@@ -7,6 +7,7 @@ whose input a source cannot provide (e.g. beacon interval from nmcli) is 0.0.
 
 from __future__ import annotations
 
+from twinwatch import cluster
 from twinwatch.baseline import Baseline
 from twinwatch.model import APRecord
 
@@ -23,8 +24,11 @@ SIGNALS = (
     "signal_jump",
     "beacon_mismatch",
     "capability_mismatch",
+    "cluster_outlier",
     "signal_delta_db",
+    "cluster_distance",
 )
+NUMERIC = {"signal_delta_db", "cluster_distance"}
 
 
 def extract(ap: APRecord, baseline: Baseline) -> dict[str, float]:
@@ -46,6 +50,7 @@ def extract(ap: APRecord, baseline: Baseline) -> dict[str, float]:
         jump_db = SIGNAL_JUMP_DB
 
     delta = ap.signal_dbm - ref_rssi if ap.signal_dbm is not None and ref_rssi is not None else 0.0
+    cluster_label, cluster_distance = cluster.clusters_for(baseline).assign(ap)
 
     values = {
         "new_bssid": known is None,
@@ -59,11 +64,13 @@ def extract(ap: APRecord, baseline: Baseline) -> dict[str, float]:
         and ap.beacon_interval not in beacons,
         "capability_mismatch": bool(caps) and ap.capabilities is not None
         and ap.capabilities not in caps,
+        "cluster_outlier": cluster_label == -1,
         "signal_delta_db": delta,
+        "cluster_distance": cluster_distance,
     }
     return {name: float(values[name]) for name in SIGNALS}
 
 
 def fired(signals: dict[str, float]) -> tuple[str, ...]:
     """Boolean signals that are on, in SIGNALS order."""
-    return tuple(n for n in SIGNALS if n != "signal_delta_db" and signals[n])
+    return tuple(n for n in SIGNALS if n not in NUMERIC and signals[n])

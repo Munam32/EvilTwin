@@ -10,7 +10,7 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 ## Commands
 
 ```bash
-.venv/bin/pip install -e '.[dev]'   # add ml / monitor extras when those parts land
+.venv/bin/pip install -e '.[eval,monitor,dev]'
 .venv/bin/pytest
 .venv/bin/twinwatch scan
 ```
@@ -20,7 +20,7 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 - Passive only. Never add code that transmits deauthentication, disassociation, jamming or any attack frame, and never decrypt or inspect user traffic.
 - The hostapd lab AP is not part of this repo. Do not add an evil twin kit.
 - Test fixtures use locally administered MACs (`02:00:00:...`) and invented SSIDs, never real nearby networks.
-- `data/raw/` and `data/processed/` hold licence-restricted datasets (AWID3, WiGLE) and stay gitignored. `.env` holds API credentials and stays gitignored.
+- Everything under `data/` (raw, processed, lab) is stored on DagsHub only, never in git: AWID3/WiGLE are licence-restricted and lab recordings contain nearby networks' SSIDs and MACs. Never suggest `git add` for data files. `.env` holds API credentials and stays gitignored.
 
 ## Architecture
 
@@ -34,6 +34,8 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 - Synthetic generator (`twinwatch/datasets/synth.py`): a twin only gets fields its base has (mirrors None), so models cannot learn source artifacts. Sessions are identified by `meta["session"]`; split train/test by session, never by snapshot.
 - Recordings are JSON Lines, one snapshot per line (`twinwatch/recording.py`).
 - `twinwatch/features.py` owns the signal list (`SIGNALS`, fixed order = ML feature order). Detectors never read APRecords directly.
+- `twinwatch/cluster.py`: DBSCAN over trusted baseline APs, `min_samples` fixed at 1 (trusted APs are never noise), `EPS` from `python -m twinwatch.cluster tune`. Its signals (`cluster_outlier`, `cluster_distance`) feed only the ML detector; the weighted rule ignores signals it has no weight for. `NUMERIC` signals are never listed as reasons.
+- `recording.sessions` groups snapshots by (session, SSID); use it for any train/test split.
 - A detector is a scorer `signals -> (score 0..1, reasons)` registered in `detectors.DETECTORS`; `detectors.assess` turns scores into Safe / Suspicious / Likely verdicts (0.4 / 0.75). The ML detector must plug in the same way.
 
 ## Evaluation discipline

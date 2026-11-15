@@ -4,9 +4,12 @@ __pycache__/
 .pytest_cache/
 .env
 
-# Raw and processed datasets are large and licence-restricted (AWID3, WiGLE).
-data/raw/
-data/processed/
+# All datasets are stored on DagsHub, never in git. Lab recordings also hold
+# nearby networks' names and MACs; AWID3 and WiGLE are licence-restricted.
+/data/*
+!/data/lab/
+/data/lab/*
+!/data/lab/.gitkeep
 *.pcap
 *.pcapng
 

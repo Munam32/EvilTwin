@@ -7,6 +7,9 @@ Weights are set by reasoning about the attack, not fitted to data:
   reaches Likely evil twin (0.75).
 - A known BSSID on a channel it never used is the cloned-BSSID pattern.
 - A new legitimate AP on a new channel (0.30 + 0.05) must stay Safe.
+
+The DBSCAN cluster signals are left to the ML detector, so this rule stays an
+independent baseline.
 """
 
 from __future__ import annotations
@@ -27,5 +30,5 @@ WEIGHTS = {
 
 
 def score(signals: dict[str, float]) -> tuple[float, tuple[str, ...]]:
-    reasons = tuple(sorted(fired(signals), key=lambda n: -WEIGHTS[n]))
+    reasons = tuple(sorted((n for n in fired(signals) if n in WEIGHTS), key=lambda n: -WEIGHTS[n]))
     return min(1.0, sum(WEIGHTS[n] for n in reasons)), reasons
