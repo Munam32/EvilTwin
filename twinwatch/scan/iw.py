@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from twinwatch.model import APRecord, derive_security
+from twinwatch.model import PRIVACY_BIT, APRecord, derive_security
 
 _BSS = re.compile(r"^BSS ([0-9a-fA-F:]{17})", re.M)
 _FREQ = re.compile(r"^\s*freq: ([\d.]+)", re.M)
@@ -19,8 +19,6 @@ _CAPAB = re.compile(r"^\s*capability:.*\((0x[0-9a-fA-F]+)\)", re.M)
 _TSF = re.compile(r"^\s*TSF: (\d+) usec", re.M)
 _LAST_SEEN = re.compile(r"^\s*last seen: (\d+) ms ago", re.M)
 _HEX_ESCAPE = re.compile(rb"\\x([0-9a-fA-F]{2})")
-
-PRIVACY_BIT = 0x0010
 
 
 def _ie_block(block: str, name: str) -> str | None:

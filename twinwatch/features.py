@@ -2,7 +2,8 @@
 
 Every detector reads the same signals: the rule detectors weigh them by hand,
 the ML detector learns from them. Boolean signals are 0.0 or 1.0. A signal
-whose input a source cannot provide (e.g. beacon interval from nmcli) is 0.0.
+whose input a source cannot provide (e.g. beacon interval from nmcli, or
+`tsf_anomaly` outside monitor mode and AWID3) is 0.0.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ SIGNALS = (
     "beacon_mismatch",
     "capability_mismatch",
     "cluster_outlier",
+    "tsf_anomaly",
     "signal_delta_db",
     "cluster_distance",
 )
@@ -65,6 +67,7 @@ def extract(ap: APRecord, baseline: Baseline) -> dict[str, float]:
         "capability_mismatch": bool(caps) and ap.capabilities is not None
         and ap.capabilities not in caps,
         "cluster_outlier": cluster_label == -1,
+        "tsf_anomaly": bool(ap.tsf_backwards),
         "signal_delta_db": delta,
         "cluster_distance": cluster_distance,
     }

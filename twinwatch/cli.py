@@ -52,8 +52,16 @@ def scan_loop(args: argparse.Namespace, count: int | None) -> Iterator[Snapshot]
             time.sleep(max(0.0, args.interval - (time.monotonic() - started)))
 
 
+def monitor_notice(snap: Snapshot) -> None:
+    freqs = snap.meta.get("monitor_freqs", [])
+    if len(freqs) == 1:
+        console.print(f"[yellow]Monitor mode stayed on {freqs[0]} MHz: the card is connected on that "
+                      "channel and cannot hop, so APs on other channels are not seen.[/]")
+
+
 def cmd_scan(args: argparse.Namespace) -> None:
     snap = scan(args.interface, args.backend)
+    monitor_notice(snap)
     aps = snap.for_ssid(args.ssid) if args.ssid else snap.aps
     console.print(report.ap_table(aps, title=f"{len(aps)} APs ({snap.source})"))
 
@@ -104,7 +112,9 @@ def cmd_watch(args: argparse.Namespace) -> None:
     alerter = report.Alerter(args.log, desktop=not args.no_notify)
     console.print(f"Watching {args.ssid!r} with the {args.detector} detector, every "
                   f"{args.interval:.0f}s. Alerts log: {args.log}. Ctrl+C to stop.")
-    for snap in scan_loop(args, None):
+    for n, snap in enumerate(scan_loop(args, None)):
+        if n == 0:
+            monitor_notice(snap)
         if args.record:
             recording.append(args.record, replace(snap, meta={"ssid": args.ssid}))
         verdicts = assess(scorer, snap, baseline)

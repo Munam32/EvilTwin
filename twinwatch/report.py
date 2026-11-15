@@ -24,7 +24,7 @@ def _opt(value) -> str:
 
 def ap_table(aps: Iterable[APRecord], title: str | None = None) -> Table:
     table = Table(title=title)
-    for col in ("SSID", "BSSID", "Ch", "Band", "dBm", "Security", "AKM", "Beacon TU", "Label"):
+    for col in ("SSID", "BSSID", "Ch", "Band", "dBm", "Security", "AKM", "Beacon TU", "Capab", "Label"):
         table.add_column(col)
     for ap in sorted(aps, key=lambda a: (a.ssid, -(a.signal_dbm or -999))):
         table.add_row(
@@ -36,6 +36,7 @@ def ap_table(aps: Iterable[APRecord], title: str | None = None) -> Table:
             "/".join(ap.security),
             "/".join(ap.akm) or "-",
             _opt(ap.beacon_interval),
+            "-" if ap.capabilities is None else f"0x{ap.capabilities:04x}",
             _opt(ap.label),
         )
     return table

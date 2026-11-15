@@ -16,7 +16,6 @@ import argparse
 import csv
 import re
 import shutil
-import statistics
 import subprocess
 import sys
 from collections import Counter
@@ -24,7 +23,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 from twinwatch import recording
-from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot, derive_security
+from twinwatch.beacons import merge_window, security_from_suites
+from twinwatch.model import BENIGN, EVIL_TWIN, PRIVACY_BIT, APRecord, Snapshot
 
 csv.field_size_limit(sys.maxsize)
 
@@ -49,12 +49,6 @@ LABEL = "Label"
 TSHARK_FIELDS = (TIME, SUBTYPE, BSSID, SSID, *FREQS, *SIGNALS, BEACON_INTERVAL,
                  CAPABILITIES, PRIVACY, TSF, RSN_AKM, RSN_PAIRWISE, WPA_AKM, WPA_PAIRWISE)
 REQUIRED = (TIME, SUBTYPE, BSSID, SSID)
-
-# IEEE 802.11 AKM suite selectors (00-0F-AC:n).
-AKM_NAMES = {1: "EAP", 2: "PSK", 3: "EAP", 4: "PSK", 5: "EAP", 6: "PSK", 8: "SAE", 9: "SAE",
-             11: "EAP-SUITE-B", 12: "EAP-SUITE-B", 13: "EAP", 18: "OWE", 24: "SAE", 25: "SAE"}
-CIPHER_NAMES = {1: "WEP-40", 2: "TKIP", 4: "CCMP", 5: "WEP-104", 8: "GCMP-128",
-                9: "GCMP-256", 10: "CCMP-256"}
 
 _HEX = re.compile(r"^(?:[0-9a-fA-F]{2})+$")
 _MULTI = re.compile(r"[,;]")
@@ -128,15 +122,14 @@ def frame_to_record(row: dict) -> tuple[float, APRecord] | None:
         return None
 
     rsn_codes, wpa_codes = _ints(row, RSN_AKM), _ints(row, WPA_AKM)
-    rsn_akm = {AKM_NAMES[c] for c in rsn_codes if c in AKM_NAMES}
-    wpa_akm = {AKM_NAMES[c] for c in wpa_codes if c in AKM_NAMES}
     capabilities = _int(_first(row, (CAPABILITIES,)))
     privacy_raw = (_first(row, (PRIVACY,)) or "").lower()
-    privacy = privacy_raw in ("1", "true") or bool(capabilities and capabilities & 0x0010)
-    rsn = bool(rsn_codes or _values(row, RSN_PAIRWISE))
-    wpa = bool(wpa_codes or _values(row, WPA_PAIRWISE))
-    pairwise = {CIPHER_NAMES[c] for c in _ints(row, RSN_PAIRWISE) + _ints(row, WPA_PAIRWISE)
-                if c in CIPHER_NAMES}
+    privacy = privacy_raw in ("1", "true") or bool(capabilities and capabilities & PRIVACY_BIT)
+    rsn_present = bool(rsn_codes or _values(row, RSN_PAIRWISE))
+    wpa_present = bool(wpa_codes or _values(row, WPA_PAIRWISE))
+    security, akm, pairwise = security_from_suites(
+        rsn_codes if rsn_present else None, wpa_codes if wpa_present else None,
+        _ints(row, RSN_PAIRWISE) + _ints(row, WPA_PAIRWISE), privacy)
     signal = _first(row, SIGNALS)
 
     record = APRecord(
@@ -144,9 +137,9 @@ def frame_to_record(row: dict) -> tuple[float, APRecord] | None:
         ssid=_decode_ssid(row.get(SSID) or ""),
         freq_mhz=freq,
         signal_dbm=float(signal) if signal is not None else None,
-        security=derive_security(wpa, rsn, rsn_akm, privacy),
-        akm=tuple(sorted(rsn_akm | wpa_akm)),
-        pairwise=tuple(sorted(pairwise)),
+        security=security,
+        akm=akm,
+        pairwise=pairwise,
         beacon_interval=_int(_first(row, (BEACON_INTERVAL,))),
         capabilities=capabilities,
         tsf=_int(_first(row, (TSF,))),
@@ -155,40 +148,13 @@ def frame_to_record(row: dict) -> tuple[float, APRecord] | None:
     return float(row[TIME]), record
 
 
-def _mode(values: Iterable):
-    values = [v for v in values if v is not None]
-    return Counter(values).most_common(1)[0][0] if values else None
-
-
-def _merge(frames: list[APRecord]) -> APRecord:
-    """All frames of one AP (BSSID + frequency) in one window -> one record."""
-    signals = [f.signal_dbm for f in frames if f.signal_dbm is not None]
-    labels = {f.label for f in frames}
-    label = EVIL_TWIN if EVIL_TWIN in labels else BENIGN if BENIGN in labels else None
-    last = frames[-1]
-    return APRecord(
-        bssid=last.bssid,
-        ssid=_mode(f.ssid for f in frames),
-        freq_mhz=last.freq_mhz,
-        signal_dbm=statistics.median(signals) if signals else None,
-        security=_mode(f.security for f in frames),
-        akm=_mode(f.akm for f in frames),
-        pairwise=_mode(f.pairwise for f in frames),
-        beacon_interval=_mode(f.beacon_interval for f in frames),
-        capabilities=_mode(f.capabilities for f in frames),
-        tsf=last.tsf,
-        label=label,
-    )
-
-
 def windows(rows: Iterable[dict], window_s: float, meta: dict) -> Iterator[Snapshot]:
     """Group frames into `window_s`-second Snapshots. Rows must be in capture order."""
     start: float | None = None
-    current: dict[tuple[str, int], list[APRecord]] = {}
+    current: list[APRecord] = []
 
     def flush() -> Snapshot:
-        aps = tuple(_merge(frames) for _, frames in sorted(current.items()))
-        return Snapshot(time=start, source="awid3", aps=aps, meta=meta)
+        return Snapshot(time=start, source="awid3", aps=merge_window(current), meta=meta)
 
     for row in rows:
         parsed = frame_to_record(row)
@@ -200,9 +166,9 @@ def windows(rows: Iterable[dict], window_s: float, meta: dict) -> Iterator[Snaps
         if t >= start + window_s:
             if current:
                 yield flush()
-                current = {}
+                current = []
             start += window_s * ((t - start) // window_s)
-        current.setdefault((record.bssid, record.freq_mhz), []).append(record)
+        current.append(record)
     if current:
         yield flush()
 

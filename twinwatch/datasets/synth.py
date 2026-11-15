@@ -26,17 +26,20 @@ from dataclasses import replace
 from pathlib import Path
 
 from twinwatch import recording
-from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot
+from twinwatch.model import BENIGN, EVIL_TWIN, PRIVACY_BIT, APRecord, Snapshot
 
 BENIGN_SCENARIOS = ("benign_steady", "benign_new_ap")
 ATTACK_SCENARIOS = ("same_security", "open_network", "stronger_signal", "cloned_bssid")
 SCENARIOS = BENIGN_SCENARIOS + ATTACK_SCENARIOS
+# Needs per-beacon TSF data in the base (monitor mode, AWID3): a twin cloning the
+# BSSID on the same channel merges into the real AP's record, and only the TSF
+# going backwards gives it away.
+MONITOR_SCENARIOS = ("cloned_same_channel",)
 
 SCAN_INTERVAL_S = 10.0
 DROPOUT = 0.1  # chance an AP is missing from one scan
 HOSTAPD_BEACON_TU = 100
 HOSTAPD_CAPS = {True: 0x0411, False: 0x0401}  # ESS + ShortSlot, with / without Privacy
-PRIVACY_BIT = 0x0010
 # Share of twins configured to copy the real AP's beacon interval and capability bits.
 CAREFUL_ATTACKER = 0.5
 FREQS = {"2.4": [2412 + 5 * i for i in range(13)],
@@ -91,6 +94,10 @@ def _base_scans(base: list[Snapshot], n: int, rng: random.Random) -> tuple[list[
     return scans, simulated
 
 
+def has_beacon_tsf(base: list[Snapshot]) -> bool:
+    return all(ap.tsf_backwards is not None for snap in base for ap in snap.aps)
+
+
 def _other_channel(freqs: set[int], band: str, rng: random.Random) -> int:
     choices = [f for f in FREQS[band] if f not in freqs]
     return rng.choice(choices or FREQS[band])
@@ -101,7 +108,7 @@ def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: ran
     ouis = {ap.oui for ap in network}
     freqs = {ap.freq_mhz for ap in network}
     signals = [ap.signal_dbm for ap in network]
-    if scenario == "benign_steady":
+    if scenario in ("benign_steady", *MONITOR_SCENARIOS):
         return None
     if scenario == "benign_new_ap":
         freq = rng.choice(sorted(freqs)) if rng.random() < 0.5 else _other_channel(freqs, target.band, rng)
@@ -136,6 +143,8 @@ def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: ran
 
 def session(origin: str, ssid: str, base: list[Snapshot], scenario: str, learn_scans: int,
             attack_scans: int, rng: random.Random, session_id: str) -> list[Snapshot]:
+    if scenario in MONITOR_SCENARIOS and not has_beacon_tsf(base):
+        raise ValueError(f"{scenario} needs a base with per-beacon TSF data")
     scans, simulated = _base_scans(base, learn_scans + attack_scans, rng)
     seen: dict[str, list[APRecord]] = defaultdict(list)
     for aps in scans[:learn_scans]:
@@ -149,6 +158,9 @@ def session(origin: str, ssid: str, base: list[Snapshot], scenario: str, learn_s
             "origin": origin, "learn_scans": learn_scans, "simulated_rssi": simulated}
     snaps = []
     for i, aps in enumerate(scans):
+        if scenario == "cloned_same_channel" and i >= learn_scans:
+            aps = [replace(ap, tsf_backwards=rng.randint(1, 4), label=EVIL_TWIN)
+                   if (ap.bssid, ap.freq_mhz) == (target.bssid, target.freq_mhz) else ap for ap in aps]
         if extra is not None and i >= learn_scans:
             jitter = round(extra.signal_dbm + rng.gauss(0, 2.0), 1)
             aps = [*aps, replace(extra, signal_dbm=jitter)]
@@ -166,8 +178,9 @@ def generate(inputs: list[Path], out: Path, ssid: str | None = None, learn_scans
     counts: dict[str, int] = defaultdict(int)
     for path in inputs:
         for origin, name, base in bases(recording.read(path), ssid, path.stem):
+            scenarios = SCENARIOS + (MONITOR_SCENARIOS if has_beacon_tsf(base) else ())
             for r in range(repeats):
-                for scenario in SCENARIOS:
+                for scenario in scenarios:
                     sid = f"{origin}/{scenario}/{r}"
                     for snap in session(origin, name, base, scenario, learn_scans, attack_scans, rng, sid):
                         recording.append(out, snap)
@@ -191,7 +204,7 @@ def main(argv: list[str] | None = None) -> None:
                           args.repeats, args.seed)
     except (ValueError, OSError) as e:
         sys.exit(f"error: {e}")
-    print(f"{args.out}: sessions " + ", ".join(f"{s}={counts.get(s, 0)}" for s in SCENARIOS))
+    print(f"{args.out}: sessions " + ", ".join(f"{s}={n}" for s, n in counts.items()))
 
 
 if __name__ == "__main__":

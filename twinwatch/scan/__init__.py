@@ -11,7 +11,7 @@ from pathlib import Path
 from twinwatch.model import Snapshot
 from twinwatch.scan import iw, nmcli
 
-BACKENDS = ("auto", "iw", "nmcli")
+BACKENDS = ("auto", "iw", "nmcli", "monitor")
 # Drop cached iw entries older than this; they are APs no longer in range.
 MAX_AGE_MS = 30_000
 
@@ -63,13 +63,22 @@ def default_interface() -> str:
 def resolve_backend(backend: str) -> str:
     if backend == "auto":
         backend = "iw" if shutil.which("iw") else "nmcli"
-    if not shutil.which(backend):
-        raise ScanError(f"{backend} is not installed")
+    tool = "iw" if backend == "monitor" else backend  # monitor mode tunes channels with iw
+    if not shutil.which(tool):
+        raise ScanError(f"{tool} is not installed")
     return backend
 
 
 def scan(interface: str, backend: str = "auto") -> Snapshot:
     backend = resolve_backend(backend)
+    if backend == "monitor":
+        from twinwatch.scan import monitor
+
+        try:
+            monitor.check_interface(interface)
+            return monitor.capture(interface)
+        except monitor.MonitorError as e:
+            raise ScanError(str(e)) from e
     if backend == "iw":
         aps = iw.parse(_scan_iw(interface), max_age_ms=MAX_AGE_MS)
     else:

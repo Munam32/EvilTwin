@@ -15,6 +15,8 @@ SECURITY_RANK = {"OPEN": 0, "WEP": 1, "WPA": 2, "WPA2": 3, "WPA3": 4}
 BENIGN = "benign"
 EVIL_TWIN = "evil_twin"
 
+PRIVACY_BIT = 0x0010  # capability bit: the AP requires encryption
+
 
 def derive_security(wpa: bool, rsn: bool, rsn_akm: set[str], privacy: bool) -> tuple[str, ...]:
     """Security protocols from the WPA/RSN elements an AP advertises.
@@ -62,7 +64,9 @@ class APRecord:
 
     Fields a source cannot provide are None (for example beacon_interval from
     nmcli). `security` holds every protocol the AP advertises, e.g.
-    ("WPA", "WPA2") for a mixed-mode AP.
+    ("WPA", "WPA2") for a mixed-mode AP. `tsf_backwards` counts how often the
+    TSF went backwards across this AP's individual beacons, so it is known
+    only for per-beacon sources (monitor mode, AWID3).
     """
 
     bssid: str
@@ -75,6 +79,7 @@ class APRecord:
     beacon_interval: int | None = None
     capabilities: int | None = None
     tsf: int | None = None
+    tsf_backwards: int | None = None
     label: str | None = None
 
     def __post_init__(self) -> None:

@@ -197,7 +197,7 @@ Use `.[dev]` alone for the tool and tests without the evaluation and monitor-mod
 ### Hardware
 
 - Any Linux-supported Wi-Fi card works for managed-mode scans.
-- Optional: a USB adapter with monitor mode (Atheros AR9271 or Ralink RT5370 chipset) for TSF timestamp features. A second adapter keeps the laptop's main connection up while capturing.
+- Optional: monitor mode for per-beacon TSF checks. Many built-in cards support it (check `iw list` for `monitor` under "Supported interface modes"); a USB adapter (Atheros AR9271 or Ralink RT5370) keeps the laptop's main connection up while capturing.
 
 ## Usage
 
@@ -238,6 +238,22 @@ Each AP of the trusted SSID gets a score from 0 to 1: Safe below 0.4, Suspicious
 | `beacon_mismatch` | Beacon interval differs from the baseline |
 | `capability_mismatch` | Capability bits differ from the baseline |
 | `cluster_outlier` | Device fingerprint not within reach of any DBSCAN cluster of trusted APs (ML detector only) |
+| `tsf_anomaly` | The AP's TSF timestamp went backwards between its beacons: two devices share the BSSID on one channel (monitor mode and AWID3 only; ML detector only) |
+
+### Monitor mode (optional)
+
+`--backend monitor` captures beacons with Scapy instead of asking the driver for scan results. It only listens. Each scan hops over the common 2.4 and 5 GHz channels (about 9 s) and merges each AP's beacons. Seeing every beacon lets it catch a twin that clones the real AP's BSSID on the same channel: the two devices' TSF clocks interleave, so the TSF goes backwards. Managed-mode scans merge the two into one entry and cannot see this.
+
+It needs root, `iw`, the `monitor` extra (Scapy) and an interface in monitor mode:
+
+```bash
+sudo iw dev wlp4s0 interface add mon0 type monitor
+sudo ip link set mon0 up
+sudo .venv/bin/twinwatch scan -i mon0 --backend monitor --ssid HomeNet
+sudo iw dev mon0 del
+```
+
+If the card is also connected to Wi-Fi, it is pinned to that channel (`Device or resource busy`). Capture then stays on the connected channel for the whole scan and says so: APs on other channels are not seen, but a twin cloning the connected AP on its channel still is. To hop all channels, disconnect the managed interface or use a second USB adapter. `Too many open files (-23)` from `interface add` means `mon0` already exists. `python -m twinwatch.scan.monitor --help` shows the same steps.
 
 ### DBSCAN grouping
 
@@ -266,7 +282,8 @@ python -m twinwatch.evaluation.train data/processed/synthetic*.jsonl data/proces
 twinwatch/
   model.py        shared schema: APRecord, Snapshot
   recording.py    JSONL snapshot recordings
-  scan/           iw and nmcli parsers, scan runner, monitor mode (planned)
+  scan/           iw and nmcli parsers, monitor-mode capture (Scapy), scan runner
+  beacons.py      per-beacon suite decoding and merging (monitor mode, AWID3)
   baseline.py     baseline fingerprint of a trusted SSID
   report.py       risk tables, desktop alerts, alert log
   cli.py          twinwatch command
