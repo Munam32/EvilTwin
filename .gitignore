@@ -19,4 +19,7 @@ __pycache__/
 *.db
 models/
 
+# Evaluation output names lab sessions and SSIDs; tracked with DVC like the data.
+/results/
+
 

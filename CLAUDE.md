@@ -41,6 +41,8 @@ TwinWatch: passive evil twin Wi-Fi AP detector, Python 3 on Linux. University In
 
 ## Evaluation discipline
 
+- `python -m twinwatch.evaluation.evaluate` compares naive, weighted and any `--model NAME=PATH` on test sessions; ablations are models trained with `train --drop-signals`. It skips sessions with a twin in the baseline and warns when a model's training origins overlap the test origins. `results/` is gitignored (it names SSIDs).
+
 - Train on AWID3 + WiGLE + synthetic data; the lab set is test-only and never used for training or threshold tuning.
 - Cross-validate grouped by capture/session, never random rows from one session.
 - Results are lab comparisons, not real-world accuracy claims.

@@ -45,7 +45,8 @@ def model_path(synthetic, tmp_path_factory):
 def test_load_groups_rows_by_origin(synthetic):
     data = train.load([synthetic])
     assert set(data.groups) == {"home|HomeNet", "office|OfficeNet"}
-    assert len(data.X) == len(data.y) == len(data.scenarios) and len(data.X[0]) == len(SIGNALS)
+    assert len(data.signals) == len(data.y) == len(data.scenarios)
+    assert len(data.matrix()[0]) == len(SIGNALS)
     assert data.synthetic == len(data.y)
     assert {s for s, y in zip(data.scenarios, data.y) if y} == set(synth.ATTACK_SCENARIOS)
 
@@ -54,7 +55,7 @@ def test_cross_validation_needs_two_origins(synthetic):
     data = train.load([synthetic])
     oof = train.cross_validate(data, seed=0)
     assert len(oof) == len(data.y) and all(0.0 <= p <= 1.0 for p in oof)
-    one = train.Dataset(X=data.X, y=data.y, groups=["x"] * len(data.y))
+    one = train.Dataset(y=data.y, groups=["x"] * len(data.y), signals=data.signals)
     assert train.cross_validate(one, seed=0) is None
 
 
@@ -82,7 +83,7 @@ def test_ml_scorer_flags_twin_and_explains(model_path, synthetic):
 
 def test_model_with_other_signals_is_rejected(model_path, tmp_path):
     bundle = joblib.load(model_path)
-    bundle["signals"] = bundle["signals"][:-1]
+    bundle["signals"] = bundle["signals"][:-1]  # names no longer match the model's inputs
     stale = tmp_path / "stale.joblib"
     joblib.dump(bundle, stale)
     with pytest.raises(ModelError, match="retrain"):

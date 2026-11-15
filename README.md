@@ -276,6 +276,32 @@ python -m twinwatch.evaluation.train data/processed/synthetic*.jsonl data/proces
 - The model is saved with the signal list it was trained on, so a model from an older signal set is refused. Explanations list the fired signals by feature importance.
 - `models/` is gitignored; track it with DVC like the data. Never train on the lab attack sessions: they are the test set.
 
+### Evaluating
+
+```bash
+python -m twinwatch.evaluation.evaluate data/lab/*.jsonl --model ml=models/twinwatch_rf.joblib
+```
+
+Each test session is replayed: its first scans (6 by default, `--learn-scans`) build the baseline and every later AP of the trusted SSID is scored by the naive and weighted rules and by each `--model`. Flagged means Suspicious or worse. Per detector and scenario it reports:
+
+| Measure | Meaning |
+|---|---|
+| Detect | Share of twin sightings flagged |
+| FP | Share of benign sightings flagged |
+| Caught | Share of attack sessions where the twin was flagged at least once |
+| False alarm | Share of sessions with any benign AP flagged |
+| TTA s / TTA scans | Median time from the first scan with the twin in range to the first alert |
+
+Sessions with an evil twin inside the baseline scans are skipped, and a warning is printed when a model was trained on the same origin as a test session. Output goes to `results/` (gitignored; track with DVC): `summary.csv`, `summary.json`, per-session `sessions.csv`, and two charts, `detection_false_positives.png` and `time_to_alert.png`.
+
+Ablations are extra models trained without some signals or data, compared side by side:
+
+```bash
+python -m twinwatch.evaluation.train data/processed/synthetic.jsonl --drop-signals cluster_outlier,cluster_distance -o models/rf_no_dbscan.joblib
+python -m twinwatch.evaluation.train data/processed/synthetic.jsonl --drop-signals tsf_anomaly -o models/rf_no_tsf.joblib
+python -m twinwatch.evaluation.evaluate data/lab/*.jsonl --model ml=models/twinwatch_rf.joblib --model ml_no_dbscan=models/rf_no_dbscan.joblib --model ml_no_tsf=models/rf_no_tsf.joblib
+```
+
 ## Project layout
 
 ```
@@ -292,7 +318,7 @@ twinwatch/
   cluster.py      DBSCAN grouping of trusted APs, eps tuning
   detectors/      naive and weighted rules, Random Forest (ml)
   datasets/       AWID3 and WiGLE converters, synthetic scenario generator
-  evaluation/     train.py (ML training); metrics (planned)
+  evaluation/     train.py (ML training), evaluate.py (metrics), figures.py (charts)
 tests/            pytest suite with recorded scan fixtures
 data/lab/         lab recordings (stored on DagsHub, not in git)
 ```

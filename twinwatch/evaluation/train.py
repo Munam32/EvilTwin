@@ -31,12 +31,14 @@ LEARN_SCANS = 6  # baseline length for recordings without meta["learn_scans"]
 
 @dataclass
 class Dataset:
-    X: list[list[float]] = field(default_factory=list)
     y: list[int] = field(default_factory=list)
     groups: list[str] = field(default_factory=list)
     scenarios: list[str] = field(default_factory=list)
     signals: list[dict[str, float]] = field(default_factory=list)
     synthetic: int = 0
+
+    def matrix(self, columns: tuple[str, ...] = features.SIGNALS) -> list[list[float]]:
+        return [[s[c] for c in columns] for s in self.signals]
 
 
 def load(paths: list[Path]) -> Dataset:
@@ -54,7 +56,6 @@ def load(paths: list[Path]) -> Dataset:
                     if ap.label not in (BENIGN, EVIL_TWIN):
                         continue
                     signals = features.extract(ap, baseline)
-                    data.X.append([signals[n] for n in features.SIGNALS])
                     data.y.append(int(ap.label == EVIL_TWIN))
                     data.groups.append(group)
                     data.scenarios.append(meta.get("scenario", "recorded"))
@@ -70,19 +71,21 @@ def new_forest(seed: int):
                                   random_state=seed, n_jobs=-1)
 
 
-def cross_validate(data: Dataset, seed: int) -> list[float] | None:
+def cross_validate(data: Dataset, seed: int,
+                   columns: tuple[str, ...] = features.SIGNALS) -> list[float] | None:
     """Out-of-fold probabilities, or None with fewer than two origins."""
     from sklearn.model_selection import GroupKFold
 
     n_groups = len(set(data.groups))
     if n_groups < 2:
         return None
+    X = data.matrix(columns)
     oof = [0.0] * len(data.y)
-    for train, test in GroupKFold(n_splits=min(5, n_groups)).split(data.X, data.y, data.groups):
+    for train, test in GroupKFold(n_splits=min(5, n_groups)).split(X, data.y, data.groups):
         if len({data.y[i] for i in train}) < 2:
             continue
-        model = new_forest(seed).fit([data.X[i] for i in train], [data.y[i] for i in train])
-        for i, p in zip(test, model.predict_proba([data.X[i] for i in test])[:, 1]):
+        model = new_forest(seed).fit([X[i] for i in train], [data.y[i] for i in train])
+        for i, p in zip(test, model.predict_proba([X[i] for i in test])[:, 1]):
             oof[i] = float(p)
     return oof
 
@@ -122,8 +125,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("inputs", type=Path, nargs="+", help="labelled JSONL recordings")
     parser.add_argument("-o", "--out", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--drop-signals", default="", metavar="NAME[,NAME]",
+                        help="train without these signals (ablation), e.g. cluster_outlier,cluster_distance")
     args = parser.parse_args(argv)
     console = Console()
+    dropped = [s for s in args.drop_signals.split(",") if s]
+    unknown = set(dropped) - set(features.SIGNALS)
+    if unknown:
+        sys.exit(f"error: unknown signals {sorted(unknown)}; choose from {', '.join(features.SIGNALS)}")
+    columns = tuple(s for s in features.SIGNALS if s not in dropped)
 
     data = load(args.inputs)
     if len(set(data.y)) < 2:
@@ -132,7 +142,7 @@ def main(argv: list[str] | None = None) -> None:
     console.print(f"{len(data.y)} rows ({sum(data.y)} twin, {len(data.y) - sum(data.y)} benign) "
                   f"from {n_groups} origins; synthetic share {data.synthetic / len(data.y):.0%}")
 
-    oof = cross_validate(data, args.seed)
+    oof = cross_validate(data, args.seed, columns)
     cv = None
     if oof is None:
         console.print("[yellow]Only one origin: no cross-validation possible; add more recordings.[/]")
@@ -153,16 +163,16 @@ def main(argv: list[str] | None = None) -> None:
                                                   for n in results))
         console.print(table)
 
-    model = new_forest(args.seed).fit(data.X, data.y)
-    importance = sorted(zip(features.SIGNALS, model.feature_importances_), key=lambda x: -x[1])
+    model = new_forest(args.seed).fit(data.matrix(columns), data.y)
+    importance = sorted(zip(columns, model.feature_importances_), key=lambda x: -x[1])
     console.print("Feature importance: " + ", ".join(f"{n} {v:.2f}" for n, v in importance if v >= 0.005))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     info = {"trained_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "inputs": [p.name for p in args.inputs],
             "rows": len(data.y), "twins": sum(data.y), "origins": sorted(set(data.groups)),
             "synthetic_share": data.synthetic / len(data.y), "cv": cv, "sklearn": sklearn.__version__,
-            "seed": args.seed}
-    joblib.dump({"model": model, "signals": list(features.SIGNALS), "info": info}, args.out)
+            "seed": args.seed, "dropped_signals": dropped}
+    joblib.dump({"model": model, "signals": list(columns), "info": info}, args.out)
     console.print(f"Saved {args.out}")
 
 
