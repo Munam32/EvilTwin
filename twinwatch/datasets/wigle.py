@@ -3,12 +3,17 @@
 WiGLE stores one record per BSSID (last-seen details and an estimated
 location), not scans over time. To get something a laptop could see in one
 scan, the APs of one SSID are grouped into ~110 m grid cells; each cell with
-at least two APs becomes one Snapshot. WiGLE gives no signal strength, AKM or
+at least two APs of that SSID becomes one Snapshot. A download without --ssid
+holds many networks (homes, cafes, offices); each SSID is grouped separately. WiGLE gives no signal strength, AKM or
 capability bits, so those fields stay None.
 
 Two steps, so searches (limited per day) are not repeated:
     python -m twinwatch.datasets.wigle download --ssid NAME --bbox LAT1,LAT2,LON1,LON2 -o data/raw/wigle/NAME.json
     python -m twinwatch.datasets.wigle convert data/raw/wigle/NAME.json -o data/processed/wigle/NAME.jsonl
+
+Area downloads (no --ssid) can be narrowed with --encryption wpa3 and
+--since YYYYMMDD. Convert them with --exclude-ssid for every lab network, so
+networks used for testing never end up in training data.
 
 Credentials come from WIGLE_API_NAME and WIGLE_API_KEY, in the environment or
 in a .env file in the working directory.
@@ -66,13 +71,27 @@ def parse_bbox(text: str) -> tuple[float, float, float, float]:
     return min(lat1, lat2), max(lat1, lat2), min(lon1, lon2), max(lon1, lon2)
 
 
-def search(ssid: str, bbox: tuple[float, float, float, float], max_results: int,
-           auth: tuple[str, str]) -> list[dict]:
-    """All WiFi records named exactly `ssid` inside `bbox`, up to `max_results`."""
+def parse_date(text: str) -> str:
+    if len(text) != 8 or not text.isdigit():
+        raise argparse.ArgumentTypeError("date is YYYYMMDD")
+    return text
+
+
+def search(ssid: str | None, bbox: tuple[float, float, float, float], max_results: int,
+           auth: tuple[str, str], encryption: str | None = None,
+           since: str | None = None) -> list[dict]:
+    """WiFi records inside `bbox`, up to `max_results`.
+
+    `ssid` keeps only networks named exactly that (None: every network),
+    `encryption` one WiGLE encryption value, `since` records updated on or
+    after that date (YYYYMMDD).
+    """
     token = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
     lat1, lat2, lon1, lon2 = bbox
-    params = {"ssid": ssid, "latrange1": lat1, "latrange2": lat2, "longrange1": lon1,
+    params = {"latrange1": lat1, "latrange2": lat2, "longrange1": lon1,
               "longrange2": lon2, "resultsPerPage": min(PAGE_SIZE, max_results)}
+    optional = {"ssid": ssid, "encryption": encryption, "lastupdt": since}
+    params.update({k: v for k, v in optional.items() if v})
     results: list[dict] = []
     while len(results) < max_results:
         url = f"{SEARCH_URL}?{urllib.parse.urlencode(params)}"
@@ -125,32 +144,40 @@ def to_record(record: dict) -> APRecord | None:
     )
 
 
-def to_snapshots(records: list[dict], ssid: str, cell_deg: float = CELL_DEG) -> list[Snapshot]:
-    """Group APs of `ssid` into grid cells; each cell with 2+ APs becomes one Snapshot."""
-    cells: dict[tuple[int, int], dict[str, APRecord]] = defaultdict(dict)
+def to_snapshots(records: list[dict], ssid: str | None, cell_deg: float = CELL_DEG,
+                 exclude: frozenset[str] = frozenset()) -> list[Snapshot]:
+    """Group APs into grid cells per SSID; each cell with 2+ APs of one SSID becomes a Snapshot.
+
+    `ssid` None keeps every named network except those in `exclude`.
+    """
+    cells: dict[tuple[str, int, int], dict[str, APRecord]] = defaultdict(dict)
     for raw in records:
         rec = to_record(raw)
         lat, lon = raw.get("trilat"), raw.get("trilong")
-        if rec is None or rec.ssid != ssid or lat is None or lon is None:
+        if rec is None or lat is None or lon is None or not rec.ssid or rec.ssid in exclude:
             continue
-        cells[(round(lat / cell_deg), round(lon / cell_deg))][rec.bssid] = rec
+        if ssid is not None and rec.ssid != ssid:
+            continue
+        cells[(rec.ssid, round(lat / cell_deg), round(lon / cell_deg))][rec.bssid] = rec
     return [
         Snapshot(time=0.0, source="wigle", aps=tuple(sorted(aps.values(), key=lambda a: a.bssid)),
-                 meta={"dataset": "wigle", "ssid": ssid, "cell": f"{cy * cell_deg:.3f},{cx * cell_deg:.3f}"})
-        for (cy, cx), aps in sorted(cells.items()) if len(aps) >= 2
+                 meta={"dataset": "wigle", "ssid": name, "cell": f"{cy * cell_deg:.3f},{cx * cell_deg:.3f}"})
+        for (name, cy, cx), aps in sorted(cells.items()) if len(aps) >= 2
     ]
 
 
 def cmd_download(args: argparse.Namespace) -> None:
-    results = search(args.ssid, args.bbox, args.max_results, credentials())
+    results = search(args.ssid, args.bbox, args.max_results, credentials(),
+                     args.encryption, args.since)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps({"ssid": args.ssid, "bbox": args.bbox, "results": results}))
-    print(f"{args.out}: {len(results)} records for {args.ssid!r}")
+    args.out.write_text(json.dumps({"ssid": args.ssid, "bbox": args.bbox, "encryption": args.encryption,
+                                    "since": args.since, "results": results}))
+    print(f"{args.out}: {len(results)} records for {args.ssid or 'all networks'!r}")
 
 
 def cmd_convert(args: argparse.Namespace) -> None:
     data = json.loads(args.input.read_text())
-    snaps = to_snapshots(data["results"], data["ssid"])
+    snaps = to_snapshots(data["results"], data.get("ssid"), exclude=frozenset(args.exclude_ssid))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("")
     for snap in snaps:
@@ -165,14 +192,18 @@ def main(argv: list[str] | None = None) -> None:
                                      description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("download", help="search WiGLE and save the raw records")
-    p.add_argument("--ssid", required=True)
+    p.add_argument("--ssid", help="exact network name; omit to download every network in the box")
     p.add_argument("--bbox", type=parse_bbox, required=True, metavar="LAT1,LAT2,LON1,LON2")
+    p.add_argument("--encryption", choices=sorted(ENCRYPTION), help="only networks with this encryption")
+    p.add_argument("--since", type=parse_date, metavar="YYYYMMDD", help="only records updated since")
     p.add_argument("--max-results", type=int, default=1000)
     p.add_argument("-o", "--out", type=Path, required=True)
     p.set_defaults(func=cmd_download)
     p = sub.add_parser("convert", help="raw records -> JSONL snapshots")
     p.add_argument("input", type=Path)
     p.add_argument("-o", "--out", type=Path, required=True)
+    p.add_argument("--exclude-ssid", action="append", default=[], metavar="SSID",
+                   help="drop this network (repeatable); use for every lab network")
     p.set_defaults(func=cmd_convert)
     args = parser.parse_args(argv)
     try:

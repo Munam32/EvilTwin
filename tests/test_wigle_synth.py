@@ -203,3 +203,32 @@ def test_weighted_detector_on_synthetic_sessions(lab_base):
         assert {v.level for v in verdicts if v.ap.label == BENIGN and v.ap.bssid.startswith("02:00:00:00:01")} == {SAFE}
     for scenario in synth.ATTACK_SCENARIOS:
         assert SAFE not in outcomes[scenario], scenario
+
+
+def test_area_download_groups_each_ssid_and_drops_excluded():
+    raw = RAW + [
+        wigle_record("02:00:00:00:05:01", 31.4800, 74.3000, ssid="CafeNet"),
+        wigle_record("02:00:00:00:05:02", 31.4801, 74.3001, ssid="CafeNet"),
+        wigle_record("02:00:00:00:06:01", 31.4800, 74.3000, ssid="LabNet"),
+        wigle_record("02:00:00:00:06:02", 31.4800, 74.3001, ssid="LabNet"),
+        wigle_record("02:00:00:00:07:01", 31.4800, 74.3000, ssid=""),
+        wigle_record("02:00:00:00:07:02", 31.4800, 74.3001, ssid=""),
+    ]
+    snaps = wigle.to_snapshots(raw, None, exclude=frozenset({"LabNet"}))
+    assert [(s.meta["ssid"], len(s.aps)) for s in snaps] == [("CafeNet", 2), ("CampusNet", 3), ("CampusNet", 2)]
+    assert all({a.ssid for a in s.aps} == {s.meta["ssid"]} for s in snaps)
+
+
+def test_search_optional_filters(monkeypatch):
+    urls = []
+
+    def fake_urlopen(request, timeout):
+        urls.append(request.full_url)
+        return FakeResponse(json.dumps({"success": True, "results": RAW[:1]}).encode())
+
+    monkeypatch.setattr(wigle.urllib.request, "urlopen", fake_urlopen)
+    wigle.search(None, (31.4, 31.6, 74.2, 74.4), 10, ("n", "k"), encryption="wpa3", since="20230101")
+    assert "ssid=" not in urls[0]
+    assert "encryption=wpa3" in urls[0] and "lastupdt=20230101" in urls[0]
+    with pytest.raises(SystemExit):
+        wigle.main(["download", "--bbox", "1,2,3,4", "--since", "2023", "-o", "x.json"])
