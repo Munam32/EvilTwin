@@ -123,7 +123,10 @@ def _extra(snaps, learn_scans=4):
     return [ap for ap in snaps[-1].aps if ap.bssid + str(ap.freq_mhz) not in base]
 
 
-def test_scenarios_change_only_their_fields(lab_base):
+def test_scenarios_change_only_their_fields(lab_base, monkeypatch):
+    monkeypatch.setattr(synth, "SPOOFED_OUI", 0.0)
+    monkeypatch.setattr(synth, "TWIN_OTHER_CHANNEL", 0.0)
+    monkeypatch.setattr(synth, "BENIGN_OTHER_VENDOR", 0.0)
     rng = random.Random(7)
     target_bssid = "02:00:00:00:01:01"  # strongest AP
 
@@ -144,6 +147,19 @@ def test_scenarios_change_only_their_fields(lab_base):
         assert new.oui == "02:00:00" and new.label == BENIGN
         assert (new.security, new.akm, new.beacon_interval, new.capabilities) == \
             (("WPA2",), ("PSK",), 102, 0x1431)
+
+
+def test_no_single_field_separates_twins_from_new_aps(lab_base):
+    rng = random.Random(0)
+    twins, news = Counter(), Counter()
+    for i in range(200):
+        [twin] = _extra(synth.session("lab", "CampusNet", lab_base, "same_security", 4, 3, rng, f"t{i}"))
+        twins[(twin.oui == "02:00:00", twin.freq_mhz in (2412, 5180))] += 1
+        new = _extra(synth.session("lab", "CampusNet", lab_base, "benign_new_ap", 4, 3, rng, f"n{i}"))
+        if new:
+            news[new[0].oui == "02:00:00"] += 1
+    assert set(twins) == {(True, True), (True, False), (False, True), (False, False)}
+    assert news[True] > news[False] > 0  # most new APs keep the vendor, some do not
 
 
 def test_careful_and_default_attackers_both_occur(lab_base):
@@ -191,8 +207,9 @@ def test_bases_split_wigle_cells_and_drop_twins(lab_base):
         synth.bases([Snapshot(0.0, "t", lab_base[0].aps)], None, "x")
 
 
-def test_weighted_detector_on_synthetic_sessions(lab_base):
+def test_weighted_detector_on_synthetic_sessions(lab_base, monkeypatch):
     """Sanity check: the generator produces what the detectors are meant to see."""
+    monkeypatch.setattr(synth, "SPOOFED_OUI", 0.0)  # a spoofed-vendor twin may rightly score Safe
     rng = random.Random(11)
     outcomes = {}
     for scenario in synth.SCENARIOS:

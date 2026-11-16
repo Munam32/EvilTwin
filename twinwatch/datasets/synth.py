@@ -10,6 +10,11 @@ A twin only gets the fields its base has: if the base lacks capability bits
 (WiGLE), so does the twin. Otherwise a model could learn "has capability
 bits" as the attack sign instead of the attack itself.
 
+For the same reason no single field may separate twins from benign new APs:
+some benign new APs carry another vendor prefix (as in real multi-vendor
+networks), and some twins copy the real vendor prefix or move to another
+channel, so a model has to combine signals.
+
 Usage:
     python -m twinwatch.datasets.synth IN.jsonl [IN2.jsonl ...] -o OUT.jsonl [--seed 0]
 """
@@ -42,6 +47,17 @@ HOSTAPD_BEACON_TU = 100
 HOSTAPD_CAPS = {True: 0x0411, False: 0x0401}  # ESS + ShortSlot, with / without Privacy
 # Share of twins configured to copy the real AP's beacon interval and capability bits.
 CAREFUL_ATTACKER = 0.5
+# Share of benign new APs with a vendor prefix (OUI) the network does not use yet.
+# 26% of real WiGLE cells (376 cells, downloaded 2026-11-16) mix more than one OUI.
+BENIGN_OTHER_VENDOR = 0.26
+# Share of twins whose MAC starts with the real AP's OUI (the attacker picks it).
+SPOOFED_OUI = 0.5
+# Share of new-BSSID twins on a channel the network does not use (cloned_bssid always is).
+TWIN_OTHER_CHANNEL = 0.5
+# Twin level relative to the AP it clones (outside stronger_signal): the attacker's
+# position is unknown, so it may be heard well below or a little above the real AP.
+# A benign new AP may also be up to that much louder than every existing AP.
+TWIN_SIGNAL_DB = (-15.0, 5.0)
 FREQS = {"2.4": [2412 + 5 * i for i in range(13)],
          "5": [5180, 5200, 5220, 5240, 5745, 5765, 5785, 5805, 5825],
          "6": [5955 + 20 * i for i in range(12)]}
@@ -112,8 +128,9 @@ def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: ran
         return None
     if scenario == "benign_new_ap":
         freq = rng.choice(sorted(freqs)) if rng.random() < 0.5 else _other_channel(freqs, target.band, rng)
-        return replace(target, bssid=_random_bssid(rng, ouis, oui=target.oui), freq_mhz=freq,
-                       signal_dbm=round(rng.uniform(min(signals), max(signals)), 1),
+        oui = None if rng.random() < BENIGN_OTHER_VENDOR else target.oui
+        return replace(target, bssid=_random_bssid(rng, ouis, oui=oui), freq_mhz=freq,
+                       signal_dbm=round(rng.uniform(min(signals), max(signals) + TWIN_SIGNAL_DB[1]), 1),
                        tsf=None if target.tsf is None else rng.randrange(10**6, 10**9), label=BENIGN)
 
     open_net = scenario == "open_network"
@@ -124,12 +141,17 @@ def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: ran
     else:
         beacon = None if target.beacon_interval is None else HOSTAPD_BEACON_TU
         caps = None if target.capabilities is None else HOSTAPD_CAPS[not open_net]
+    if scenario == "cloned_bssid":
+        bssid, freq = target.bssid, _other_channel(freqs, target.band, rng)
+    else:
+        bssid = _random_bssid(rng, ouis, oui=target.oui if rng.random() < SPOOFED_OUI else None)
+        freq = _other_channel(freqs, target.band, rng) if rng.random() < TWIN_OTHER_CHANNEL else target.freq_mhz
     twin = replace(
         target,
-        bssid=target.bssid if scenario == "cloned_bssid" else _random_bssid(rng, ouis),
-        freq_mhz=_other_channel(freqs, target.band, rng) if scenario == "cloned_bssid" else target.freq_mhz,
+        bssid=bssid,
+        freq_mhz=freq,
         signal_dbm=round(target.signal_dbm + (rng.uniform(15, 25) if scenario == "stronger_signal"
-                                              else rng.gauss(0, 3)), 1),
+                                              else rng.uniform(*TWIN_SIGNAL_DB)), 1),
         security=("OPEN",) if open_net else target.security,
         akm=() if open_net else target.akm,
         pairwise=() if open_net else target.pairwise,
