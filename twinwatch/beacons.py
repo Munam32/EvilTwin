@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import statistics
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
-from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, derive_security
+from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot, derive_security
 
 # IEEE 802.11 AKM suite selectors (00-0F-AC:n).
 AKM_NAMES = {1: "EAP", 2: "PSK", 3: "EAP", 4: "PSK", 5: "EAP", 6: "PSK", 8: "SAE", 9: "SAE",
@@ -75,3 +75,25 @@ def merge_window(frames: Iterable[APRecord]) -> tuple[APRecord, ...]:
     for frame in frames:
         groups.setdefault((frame.bssid, frame.freq_mhz), []).append(frame)
     return tuple(merge(g) for _, g in sorted(groups.items()))
+
+
+def windowed(frames: Iterable[tuple[float, APRecord]], window_s: float, source: str,
+             meta: dict) -> Iterator[Snapshot]:
+    """(time, frame) pairs in capture order -> one Snapshot per `window_s` seconds.
+
+    Each window is one scan cycle of the live tool; empty windows are skipped.
+    """
+    start: float | None = None
+    current: list[APRecord] = []
+    for t, record in frames:
+        if start is None:
+            start = t
+        if t >= start + window_s:
+            if current:
+                yield Snapshot(time=start, source=source, aps=merge_window(current), meta=meta)
+                current = []
+            start += window_s * ((t - start) // window_s)
+        current.append(record)
+    if current:
+        yield Snapshot(time=start, source=source, aps=merge_window(current), meta=meta)
+
