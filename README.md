@@ -333,7 +333,7 @@ data/lab/         lab recordings (stored on DagsHub, not in git)
 
 All attack scenarios run only on the team's own router and laptops. Scanning public spaces is passive beacon listening only. The hostapd test AP is a lab instrument; this repository ships no evil twin kit.
 
-See [SECURITY.md](SECURITY.md) for reporting vulnerabilities, known limitations and responsible use.
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities, known limitations and responsible use, and [LIMITATIONS.md](LIMITATIONS.md) for every detection, data and evaluation limit and the project's constraints.
 
 ## License
 
