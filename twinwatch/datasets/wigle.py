@@ -30,9 +30,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 from twinwatch import recording
+from twinwatch.lookalike import relation
 from twinwatch.model import BENIGN, APRecord, Snapshot
 
 SEARCH_URL = "https://api.wigle.net/api/v2/network/search"
@@ -166,6 +168,48 @@ def to_snapshots(records: list[dict], ssid: str | None, cell_deg: float = CELL_D
     ]
 
 
+def neighbour_pairs(records: list[dict], cell_deg: float = CELL_DEG,
+                    exclude: frozenset[str] = frozenset()) -> list[Snapshot]:
+    """Nearby networks with lookalike or sibling names, one Snapshot per (cell, SSID, neighbour SSID).
+
+    Each Snapshot holds the APs of both networks in that cell; meta names the
+    trusted SSID, the neighbour and their relation. The synthetic generator
+    turns them into benign_lookalike / benign_sibling sessions: real networks
+    that a name check alone would mistake for a twin.
+    """
+    cells: dict[tuple[int, int], dict[str, dict[str, APRecord]]] = defaultdict(lambda: defaultdict(dict))
+    for raw in records:
+        rec = to_record(raw)
+        lat, lon = raw.get("trilat"), raw.get("trilong")
+        if rec is None or lat is None or lon is None or not rec.ssid or rec.ssid in exclude:
+            continue
+        cells[(round(lat / cell_deg), round(lon / cell_deg))][rec.ssid][rec.bssid] = rec
+    pairs = []
+    for (cy, cx), networks in sorted(cells.items()):
+        for name in sorted(networks):
+            for other in sorted(networks):
+                kind = relation(other, name)
+                if kind is None:
+                    continue
+                aps = sorted([*networks[name].values(), *networks[other].values()], key=lambda a: a.bssid)
+                pairs.append(Snapshot(time=0.0, source="wigle", aps=tuple(aps), meta={
+                    "dataset": "wigle", "ssid": name, "neighbour_ssid": other, "relation": kind,
+                    "cell": f"{cy * cell_deg:.3f},{cx * cell_deg:.3f}"}))
+    return pairs
+
+
+def cmd_pairs(args: argparse.Namespace) -> None:
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text("")
+    kinds: dict[str, int] = defaultdict(int)
+    for path in args.inputs:
+        source = "wigle_" + path.stem  # matches the converted area file, e.g. wigle_area_lahore_dha
+        for snap in neighbour_pairs(json.loads(path.read_text())["results"], exclude=frozenset(args.exclude_ssid)):
+            recording.append(args.out, replace(snap, meta={**snap.meta, "source": source}))
+            kinds[snap.meta["relation"]] += 1
+    print(f"{args.out}: " + (", ".join(f"{k}={v}" for k, v in sorted(kinds.items())) or "no pairs"))
+
+
 def cmd_download(args: argparse.Namespace) -> None:
     results = search(args.ssid, args.bbox, args.max_results, credentials(),
                      args.encryption, args.since)
@@ -205,6 +249,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--exclude-ssid", action="append", default=[], metavar="SSID",
                    help="drop this network (repeatable); use for every lab network")
     p.set_defaults(func=cmd_convert)
+    p = sub.add_parser("pairs", help="area downloads -> nearby lookalike/sibling network pairs")
+    p.add_argument("inputs", type=Path, nargs="+", help="raw area downloads (no --ssid)")
+    p.add_argument("-o", "--out", type=Path, required=True)
+    p.add_argument("--exclude-ssid", action="append", default=[], metavar="SSID",
+                   help="drop this network (repeatable); use for every lab network")
+    p.set_defaults(func=cmd_pairs)
     args = parser.parse_args(argv)
     try:
         args.func(args)

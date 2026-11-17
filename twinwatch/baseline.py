@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from twinwatch.lookalike import related
 from twinwatch.model import SECURITY_RANK, APRecord, Snapshot
 
 
@@ -33,6 +34,13 @@ class Baseline:
     created: float
     scans: int
     aps: tuple[BaselineAP, ...]
+    # BSSIDs with a lookalike or sibling SSID seen while learning: trusted neighbours, not twins.
+    neighbours: tuple[str, ...] = ()
+
+    def candidates(self, snapshot: Snapshot) -> list[APRecord]:
+        """APs to check: every AP of the trusted SSID, and new APs with a lookalike or sibling SSID."""
+        return [ap for ap in snapshot.aps
+                if ap.ssid == self.ssid or (ap.bssid not in self.neighbours and related(ap.ssid, self.ssid))]
 
     def get(self, bssid: str) -> BaselineAP | None:
         return next((ap for ap in self.aps if ap.bssid == bssid), None)
@@ -72,6 +80,7 @@ class Baseline:
             "created": self.created,
             "scans": self.scans,
             "aps": [vars(ap) for ap in self.aps],
+            "neighbours": list(self.neighbours),
         }
 
     @classmethod
@@ -81,7 +90,8 @@ class Baseline:
                           "akm": tuple(a["akm"])})
             for a in d["aps"]
         )
-        return cls(ssid=d["ssid"], created=d["created"], scans=d["scans"], aps=aps)
+        return cls(ssid=d["ssid"], created=d["created"], scans=d["scans"], aps=aps,
+                   neighbours=tuple(d.get("neighbours", ())))
 
 
 def _mode(values: Iterable):
@@ -108,13 +118,18 @@ def _fingerprint(bssid: str, records: list[APRecord]) -> BaselineAP:
 def build(snapshots: Iterable[Snapshot], ssid: str) -> Baseline:
     """Fingerprint every AP broadcasting `ssid` across the given scans."""
     by_bssid: dict[str, list[APRecord]] = {}
+    neighbours: set[str] = set()
     scans, created = 0, None
     for snap in snapshots:
         scans += 1
         created = created if created is not None else snap.time
-        for ap in snap.for_ssid(ssid):
-            by_bssid.setdefault(ap.bssid, []).append(ap)
+        for ap in snap.aps:
+            if ap.ssid == ssid:
+                by_bssid.setdefault(ap.bssid, []).append(ap)
+            elif related(ap.ssid, ssid):
+                neighbours.add(ap.bssid)
     if not by_bssid:
         raise ValueError(f"no AP broadcasting {ssid!r} in {scans} scans")
     aps = tuple(_fingerprint(b, recs) for b, recs in sorted(by_bssid.items()))
-    return Baseline(ssid=ssid, created=created, scans=scans, aps=aps)
+    return Baseline(ssid=ssid, created=created, scans=scans, aps=aps,
+                    neighbours=tuple(sorted(neighbours - by_bssid.keys())))

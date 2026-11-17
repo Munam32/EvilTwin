@@ -16,6 +16,7 @@ from twinwatch import baseline as baseline_mod
 from twinwatch import recording, report
 from twinwatch.detectors import NAMES, SAFE, assess, make_scorer
 from twinwatch.detectors.ml import DEFAULT_MODEL, ModelError
+from twinwatch.lookalike import related
 from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot
 from twinwatch.scan import BACKENDS, ScanError, default_interface, scan
 from twinwatch.store import Store, data_dir, default_db
@@ -24,7 +25,7 @@ console = Console()
 
 
 def label_snapshot(snapshot: Snapshot, ssid: str, evil: list[str]) -> Snapshot:
-    """Label every AP of `ssid`: evil_twin if it matches an `evil` entry, else benign.
+    """Label every AP of `ssid` or a related (lookalike/sibling) SSID: evil_twin if it matches `evil`, else benign.
 
     An entry is `BSSID` or `BSSID@FREQ_MHZ`; the frequency form separates an
     evil twin that clones the real AP's BSSID on another channel.
@@ -35,7 +36,8 @@ def label_snapshot(snapshot: Snapshot, ssid: str, evil: list[str]) -> Snapshot:
         return ap.bssid in evil or f"{ap.bssid}@{ap.freq_mhz}" in evil
 
     aps = tuple(
-        ap.with_label(EVIL_TWIN if is_evil(ap) else BENIGN) if ap.ssid == ssid else ap
+        ap.with_label(EVIL_TWIN if is_evil(ap) else BENIGN) if ap.ssid == ssid or related(ap.ssid, ssid)
+        else ap
         for ap in snapshot.aps
     )
     return replace(snapshot, aps=aps)

@@ -9,6 +9,7 @@ whose input a source cannot provide (e.g. beacon interval from nmcli, or
 from __future__ import annotations
 
 from twinwatch import cluster
+from twinwatch import lookalike
 from twinwatch.baseline import Baseline
 from twinwatch.model import APRecord
 
@@ -27,6 +28,8 @@ SIGNALS = (
     "capability_mismatch",
     "cluster_outlier",
     "tsf_anomaly",
+    "ssid_lookalike",
+    "ssid_sibling",
     "signal_delta_db",
     "cluster_distance",
 )
@@ -53,6 +56,7 @@ def extract(ap: APRecord, baseline: Baseline) -> dict[str, float]:
 
     delta = ap.signal_dbm - ref_rssi if ap.signal_dbm is not None and ref_rssi is not None else 0.0
     cluster_label, cluster_distance = cluster.clusters_for(baseline).assign(ap)
+    name = lookalike.relation(ap.ssid, baseline.ssid)
 
     values = {
         "new_bssid": known is None,
@@ -68,6 +72,8 @@ def extract(ap: APRecord, baseline: Baseline) -> dict[str, float]:
         and ap.capabilities not in caps,
         "cluster_outlier": cluster_label == -1,
         "tsf_anomaly": bool(ap.tsf_backwards),
+        "ssid_lookalike": name == lookalike.LOOKALIKE,
+        "ssid_sibling": name == lookalike.SIBLING,
         "signal_delta_db": delta,
         "cluster_distance": cluster_distance,
     }

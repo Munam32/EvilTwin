@@ -31,10 +31,19 @@ from dataclasses import replace
 from pathlib import Path
 
 from twinwatch import recording
+from twinwatch.lookalike import SIBLING, looks_alike, relation
 from twinwatch.model import BENIGN, EVIL_TWIN, PRIVACY_BIT, APRecord, Snapshot
 
 BENIGN_SCENARIOS = ("benign_steady", "benign_new_ap")
-ATTACK_SCENARIOS = ("same_security", "open_network", "stronger_signal", "cloned_bssid")
+ATTACK_SCENARIOS = ("same_security", "open_network", "stronger_signal", "cloned_bssid", "lookalike_ssid",
+                    "sibling_ssid")
+# Built only from real neighbour pairs (`wigle pairs`): a real nearby network with
+# a lookalike or sibling name appears after learning. Each pair base also gets the
+# matching attack, one each, so a new name alone is even odds and a model needs
+# more evidence (vendor, security, signal) to call it a twin.
+NAME_SCENARIOS = ("lookalike_ssid", "sibling_ssid")
+PAIR_SCENARIOS = {"lookalike": ("benign_lookalike", "lookalike_ssid"),
+                  "sibling": ("benign_sibling", "sibling_ssid")}
 SCENARIOS = BENIGN_SCENARIOS + ATTACK_SCENARIOS
 # Needs per-beacon TSF data in the base (monitor mode, AWID3): a twin cloning the
 # BSSID on the same channel merges into the real AP's record, and only the TSF
@@ -114,18 +123,64 @@ def has_beacon_tsf(base: list[Snapshot]) -> bool:
     return all(ap.tsf_backwards is not None for snap in base for ap in snap.aps)
 
 
+_SWAPS = {"o": "0", "l": "1", "i": "1", "s": "5", "e": "3", "a": "4", "m": "rn"}
+
+
+def lookalike_name(ssid: str, rng: random.Random) -> str:
+    """A name a user could mistake for `ssid` (case, spacing, doubled or confusable letter)."""
+    def double(s: str) -> str:
+        i = rng.randrange(len(s))
+        return s[:i + 1] + s[i] + s[i + 1:]
+
+    def confuse(s: str) -> str:
+        spots = [i for i, ch in enumerate(s) if ch.lower() in _SWAPS]
+        if not spots:
+            return double(s)
+        i = rng.choice(spots)
+        return s[:i] + _SWAPS[s[i].lower()] + s[i + 1:]
+
+    edits = [lambda s: " " + s, lambda s: s + " ", lambda s: s.swapcase(), lambda s: s.upper(), double, confuse]
+    for _ in range(20):
+        name = rng.choice(edits)(ssid)
+        if rng.random() < 0.3:
+            name = rng.choice(edits)(name)
+        if looks_alike(name, ssid):
+            return name
+    return " " + ssid  # always a lookalike: spaces are ignored when comparing
+
+
+_SIBLING_SUFFIXES = ("_5G", "-5G", " 5G", "_2.4G", "-2.4GHz", " 4G", "-EXT", "_EXT", "_Guest", "-Guest", "-2")
+
+
+def sibling_name(ssid: str, rng: random.Random) -> str:
+    """`ssid` with a band, extender or number suffix, like the owner's other network."""
+    suffixes = list(_SIBLING_SUFFIXES)
+    rng.shuffle(suffixes)
+    for suffix in suffixes:
+        if relation(ssid + suffix, ssid) == SIBLING:
+            return ssid + suffix
+    return lookalike_name(ssid, rng)  # name too short to have siblings
+
+
 def _other_channel(freqs: set[int], band: str, rng: random.Random) -> int:
     choices = [f for f in FREQS[band] if f not in freqs]
     return rng.choice(choices or FREQS[band])
 
 
-def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: random.Random) -> APRecord | None:
+def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: random.Random,
+              neighbour: APRecord | None = None) -> APRecord | None:
     """The AP a scenario adds next to the real network, or None for benign_steady."""
     ouis = {ap.oui for ap in network}
     freqs = {ap.freq_mhz for ap in network}
     signals = [ap.signal_dbm for ap in network]
     if scenario in ("benign_steady", *MONITOR_SCENARIOS):
         return None
+    if scenario in ("benign_lookalike", "benign_sibling"):
+        if neighbour is None:
+            raise ValueError(f"{scenario} needs a real neighbour AP")
+        # A real nearby network: its own vendor, channel and security; heard at any level.
+        return replace(neighbour, signal_dbm=round(rng.uniform(min(signals) - 10, max(signals) + TWIN_SIGNAL_DB[1]), 1),
+                       tsf=None if target.tsf is None else rng.randrange(10**6, 10**9), label=BENIGN)
     if scenario == "benign_new_ap":
         freq = rng.choice(sorted(freqs)) if rng.random() < 0.5 else _other_channel(freqs, target.band, rng)
         oui = None if rng.random() < BENIGN_OTHER_VENDOR else target.oui
@@ -134,6 +189,8 @@ def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: ran
                        tsf=None if target.tsf is None else rng.randrange(10**6, 10**9), label=BENIGN)
 
     open_net = scenario == "open_network"
+    ssid = {"lookalike_ssid": lookalike_name, "sibling_ssid": sibling_name}.get(
+        scenario, lambda name, _: name)(target.ssid, rng)
     if rng.random() < CAREFUL_ATTACKER:
         beacon = target.beacon_interval
         caps = None if target.capabilities is None else (
@@ -149,6 +206,7 @@ def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: ran
     twin = replace(
         target,
         bssid=bssid,
+        ssid=ssid,
         freq_mhz=freq,
         signal_dbm=round(target.signal_dbm + (rng.uniform(15, 25) if scenario == "stronger_signal"
                                               else rng.uniform(*TWIN_SIGNAL_DB)), 1),
@@ -164,7 +222,8 @@ def _injected(scenario: str, target: APRecord, network: list[APRecord], rng: ran
 
 
 def session(origin: str, ssid: str, base: list[Snapshot], scenario: str, learn_scans: int,
-            attack_scans: int, rng: random.Random, session_id: str) -> list[Snapshot]:
+            attack_scans: int, rng: random.Random, session_id: str,
+            neighbour: APRecord | None = None) -> list[Snapshot]:
     if scenario in MONITOR_SCENARIOS and not has_beacon_tsf(base):
         raise ValueError(f"{scenario} needs a base with per-beacon TSF data")
     scans, simulated = _base_scans(base, learn_scans + attack_scans, rng)
@@ -175,7 +234,7 @@ def session(origin: str, ssid: str, base: list[Snapshot], scenario: str, learn_s
     network = [records[-1] for records in seen.values()]
     # The attacker clones the AP the victim hears best over the learning period.
     target = max(network, key=lambda ap: statistics.median(r.signal_dbm for r in seen[ap.bssid]))
-    extra = _injected(scenario, target, network, rng)
+    extra = _injected(scenario, target, network, rng, neighbour)
     meta = {"dataset": "synthetic", "session": session_id, "scenario": scenario, "ssid": ssid,
             "origin": origin, "learn_scans": learn_scans, "simulated_rssi": simulated}
     snaps = []
@@ -190,6 +249,18 @@ def session(origin: str, ssid: str, base: list[Snapshot], scenario: str, learn_s
     return snaps
 
 
+def _pair_base(snap: Snapshot, stem: str):
+    """A `wigle pairs` snapshot -> (origin, ssid, base, neighbour AP, scenarios), or nothing."""
+    name, other = snap.meta["ssid"], snap.meta["neighbour_ssid"]
+    kind = relation(other, name)
+    aps = tuple(ap for ap in snap.for_ssid(name) if ap.label != EVIL_TWIN)
+    neighbours = snap.for_ssid(other)
+    if kind is None or not aps or not neighbours:
+        return []
+    origin = f"{snap.meta.get('source', stem)}@{snap.meta['cell']}"  # same group as the cell's own base
+    return [(origin, name, [replace(snap, aps=aps)], neighbours[0], PAIR_SCENARIOS[kind])]
+
+
 def generate(inputs: list[Path], out: Path, ssid: str | None = None, learn_scans: int = 6,
              attack_scans: int = 6, repeats: int = 1, seed: int = 0) -> dict[str, int]:
     if learn_scans < 1 or attack_scans < 1:
@@ -198,9 +269,23 @@ def generate(inputs: list[Path], out: Path, ssid: str | None = None, learn_scans
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("")
     counts: dict[str, int] = defaultdict(int)
-    for path in inputs:
-        for origin, name, base in bases(recording.read(path), ssid, path.stem):
-            scenarios = SCENARIOS + (MONITOR_SCENARIOS if has_beacon_tsf(base) else ())
+    loaded = [(path, list(recording.read(path))) for path in inputs]
+    pairs_given = any("neighbour_ssid" in s.meta for _, snaps in loaded for s in snaps)
+    for path, snapshots in loaded:
+        for pair in (s for s in snapshots if "neighbour_ssid" in s.meta):
+            for origin, name, base, neighbour, scenarios in _pair_base(pair, path.stem):
+                for r in range(repeats):
+                    for scenario in scenarios:
+                        sid = f"{origin}~{neighbour.ssid}/{scenario}/{r}"
+                        for snap in session(origin, name, base, scenario, learn_scans, attack_scans, rng, sid,
+                                            neighbour):
+                            recording.append(out, snap)
+                        counts[scenario] += 1
+        plain = [s for s in snapshots if "neighbour_ssid" not in s.meta]
+        for origin, name, base in bases(plain, ssid, path.stem):
+            # Name attacks come only from pair bases, balanced with their benign neighbours.
+            plain_scenarios = tuple(s for s in SCENARIOS if s not in NAME_SCENARIOS or not pairs_given)
+            scenarios = plain_scenarios + (MONITOR_SCENARIOS if has_beacon_tsf(base) else ())
             for r in range(repeats):
                 for scenario in scenarios:
                     sid = f"{origin}/{scenario}/{r}"

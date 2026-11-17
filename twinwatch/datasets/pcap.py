@@ -5,7 +5,7 @@ one scenario label. Frames are read with Scapy (no tshark needed) and parsed
 like live monitor mode. Each frame is labelled by rules on fields that differ
 between the real AP and the twin: a frame matching any --evil rule is
 evil_twin, every other frame of --ssid is benign. Only beacons and probe
-responses of --ssid are kept. A frame with a hidden (empty) SSID counts as
+responses of --ssid and of lookalike or sibling SSIDs (twinwatch.lookalike) are kept. A frame with a hidden (empty) SSID counts as
 --ssid when its BSSID has already advertised --ssid: a twin can clone the
 BSSID and hide its name, and a scanner groups such frames by BSSID anyway.
 
@@ -34,6 +34,7 @@ from pathlib import Path
 
 from twinwatch import recording
 from twinwatch.beacons import windowed
+from twinwatch.lookalike import related
 from twinwatch.model import BENIGN, EVIL_TWIN, APRecord, Snapshot
 
 RULE_FIELDS = {"bssid": str, "ssid": str, "freq_mhz": int, "beacon_interval": int, "capabilities": int}
@@ -81,7 +82,7 @@ def frames(path: Path, ssid: str, rules: list[Rule]) -> Iterator[tuple[float, AP
                 named.add(record.bssid)
             elif not record.ssid and record.bssid in named:
                 record = replace(record, ssid=ssid)
-            else:
+            elif not related(record.ssid, ssid):
                 continue
             yield float(pkt.time), label(record, rules)
 

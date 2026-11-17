@@ -7,6 +7,12 @@ Weights are set by reasoning about the attack, not fitted to data:
   reaches Likely evil twin (0.75).
 - A known BSSID on a channel it never used is the cloned-BSSID pattern.
 - A new legitimate AP on a new channel (0.30 + 0.05) must stay Safe.
+- A new AP with a lookalike name (not a neighbour seen while learning) is
+  Suspicious with new_bssid; real nearby networks have lookalike names too
+  (2-4% in Lahore WiGLE data), so Likely needs one more sign.
+- A new sibling name (Home_5G next to Home, not seen while learning) is often
+  the owner switching on a guest network or extender: with new_bssid it is
+  Suspicious, and needs one more sign (other vendor, downgrade) for Likely.
 
 The DBSCAN cluster signals are left to the ML detector, so this rule stays an
 independent baseline.
@@ -26,6 +32,8 @@ WEIGHTS = {
     "signal_jump": 0.15,
     "beacon_mismatch": 0.20,
     "capability_mismatch": 0.20,
+    "ssid_lookalike": 0.30,
+    "ssid_sibling": 0.15,
 }
 
 
