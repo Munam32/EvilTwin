@@ -143,7 +143,7 @@ def test_convert_writes_recording(capture_csv, tmp_path):
 def test_missing_columns_named(tmp_path):
     path = tmp_path / "bad.csv"
     path.write_text("frame.time_epoch,wlan.bssid\n1,02:00:00:00:00:01\n")
-    with pytest.raises(awid3.AwidError, match="wlan.fc.type_subtype.*wlan.ssid.*radiotap.channel.freq"):
+    with pytest.raises(awid3.AwidError, match="wlan.ssid.*wlan.fc.type_subtype or wlan.fc.type and wlan.fc.subtype.*radiotap.channel.freq"):
         list(awid3.read_csv(path))
 
 
@@ -185,3 +185,51 @@ def test_pcap_through_tshark(tmp_path):
     assert (ap.bssid, ap.ssid, ap.freq_mhz, ap.signal_dbm) == (REAL, "CampusNet", 2412, -45.0)
     assert (ap.security, ap.akm, ap.beacon_interval) == (("WPA2",), ("PSK",), 100)
     assert ap.label is None
+
+
+def test_published_awid3_columns(tmp_path):
+    """The Kaggle/official AWID3 CSVs: split type/subtype, mfpc instead of AKM suites."""
+    path = tmp_path / "Evil_Twin_0.csv"
+    path.write_text(
+        "frame.time_epoch,wlan.fc.type,wlan.fc.subtype,wlan.bssid,wlan.ssid,radiotap.channel.freq,"
+        "radiotap.dbm_antsignal,wlan_radio.signal_dbm,wlan.fixed.beacon,wlan.fixed.timestamp,"
+        "wlan.rsn.capabilities.mfpc,Label\n"
+        "1.0,0,8,02:00:00:00:01:01,HomeNet,5180,-111,-35,100,24013520384.0,1.0,Normal\n"
+        "1.1,0,8,02:00:00:00:09:09,HomeNet,5180,-90,-30,100,500.0,,Evil_Twin\n"
+        "1.2,2,8,02:00:00:00:01:01,,5180,-111,-35,,,,Normal\n")
+    [snap] = awid3.windows(awid3.read_csv(path), 10.0, {})
+    real, twin = sorted(snap.aps, key=lambda a: a.bssid)
+    assert (real.security, real.akm, real.signal_dbm, real.tsf) == (("WPA2",), (), -35.0, 24013520384)
+    assert real.capabilities is None and real.label == BENIGN
+    assert (twin.security, twin.label) == (("OPEN",), EVIL_TWIN)
+
+
+def test_evil_bssid_overrides_labels_and_ssid_goes_to_meta(tmp_path):
+    path = tmp_path / "et.csv"
+    path.write_text(
+        "frame.time_epoch,wlan.fc.type,wlan.fc.subtype,wlan.bssid,wlan.ssid,radiotap.channel.freq,Label\n"
+        "1.0,0,8,02:00:00:00:01:01,HomeNet,5180,Normal\n"
+        "1.1,0,8,02:00:00:00:01:02,HomeNet,5180,Normal\n")
+    out = tmp_path / "et.jsonl"
+    counts = awid3.convert(path, out, ssid="HomeNet", evil_bssids=["02:00:00:00:01:02"])
+    assert counts[EVIL_TWIN] == 1 and counts[BENIGN] == 1
+    assert next(recording.read(out)).meta["ssid"] == "HomeNet"
+
+
+def test_evil_tsf_below_labels_a_bssid_clone(tmp_path):
+    """Same BSSID, two devices: the clone booted recently, so its TSF is far lower."""
+    path = tmp_path / "rogue.csv"
+    rows = []
+    for i in range(10):
+        rows.append(f"{i}.0,0,8,02:00:00:00:01:01,HomeNet,5180,{7_461_000_000 + i * 102_400}.0,Normal")
+        rows.append(f"{i}.5,0,5,02:00:00:00:01:01,HomeNet,5180,{89_000_000 + i * 102_400}.0,Normal")
+    path.write_text("frame.time_epoch,wlan.fc.type,wlan.fc.subtype,wlan.bssid,wlan.ssid,"
+                    "radiotap.channel.freq,wlan.fixed.timestamp,Label\n" + "\n".join(rows) + "\n")
+    out = tmp_path / "rogue.jsonl"
+    awid3.convert(path, out, ssid="HomeNet", evil_tsf_below=1000, scenario="cloned_same_channel")
+    [snap] = recording.read(out)
+    assert snap.meta["scenario"] == "cloned_same_channel"
+    [ap] = snap.aps
+    assert ap.label == EVIL_TWIN and ap.tsf_backwards == 10  # every real -> clone step
+    awid3.convert(path, out, ssid="HomeNet")
+    assert next(recording.read(out)).aps[0].label == BENIGN  # AWID3's own labels miss it
