@@ -144,7 +144,7 @@ def _labelled_sessions(paths: list) -> list[tuple[Baseline, list[APRecord]]]:
             if not ssid or learn < 1 or len(snaps) <= learn:
                 continue
             baseline = baseline_mod.build(snaps[:learn], ssid)
-            out.append((baseline, [ap for s in snaps[learn:] for ap in s.for_ssid(ssid)]))
+            out.append((baseline, [ap for s in snaps[learn:] for ap in baseline.candidates(s)]))
     return out
 
 

@@ -23,6 +23,9 @@ def write_capture(path, twin_at=range(30, 60)):
             twin.time = 1000.5 + t
             pkts.append(twin)
     other = beacon(bssid="02:00:00:00:07:07", ssid=b"OtherNet")
+    lookalike = beacon(bssid="02:00:00:00:09:09", ssid=b" HOMENET")
+    lookalike.time = 1050.0
+    pkts.append(lookalike)
     other.time = 1001.0
     hidden = beacon(bssid="02:00:00:00:08:08", ssid=b"")  # hidden AP never named HomeNet
     hidden.time = 1001.2
@@ -46,7 +49,8 @@ def test_cloned_bssid_capture_is_windowed_and_labelled(tmp_path):
     assert counts["snapshots"] == len(snaps) == 6 and counts["reordered"] == 0
     assert all(s.meta == {"dataset": "wpa3_attacks", "file": "cap.pcap", "ssid": "HomeNet", "learn_scans": 3}
                for s in snaps)
-    assert all(len(s.aps) == 1 and s.aps[0].bssid == REAL for s in snaps)  # OtherNet dropped, clone merged
+    assert all(s.aps[0].bssid == REAL for s in snaps)  # OtherNet dropped, clone merged
+    assert [len(s.aps) for s in snaps] == [1, 1, 1, 1, 1, 2]  # lookalike kept
     before, after = snaps[:3], snaps[3:]
     assert {s.aps[0].label for s in before} == {BENIGN} and {s.aps[0].tsf_backwards for s in before} == {0}
     assert {s.aps[0].label for s in after} == {EVIL_TWIN}

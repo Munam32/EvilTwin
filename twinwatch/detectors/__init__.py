@@ -57,7 +57,7 @@ def level_for(score: float) -> str:
 
 def assess(scorer: Scorer, snapshot: Snapshot, baseline: Baseline) -> list[Verdict]:
     verdicts = []
-    for ap in snapshot.for_ssid(baseline.ssid):
+    for ap in baseline.candidates(snapshot):
         signals = features.extract(ap, baseline)
         score, reasons = scorer(signals)
         verdicts.append(Verdict(ap, score, level_for(score), reasons, signals))

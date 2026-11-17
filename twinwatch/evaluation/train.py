@@ -52,7 +52,7 @@ def load(paths: list[Path]) -> Dataset:
             baseline = baseline_mod.build(snaps[:learn], ssid)
             group = f"{meta.get('origin', path.stem)}|{ssid}"
             for snap in snaps[learn:]:
-                for ap in snap.for_ssid(ssid):
+                for ap in baseline.candidates(snap):
                     if ap.label not in (BENIGN, EVIL_TWIN):
                         continue
                     signals = features.extract(ap, baseline)

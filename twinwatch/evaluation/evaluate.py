@@ -77,7 +77,7 @@ def evaluate_session(snaps, ssid: str, learn: int, scorers: dict[str, Scorer],
     scans = []  # per scan: time and (label, signals) of each labelled AP of the trusted SSID
     for snap in snaps[learn:]:
         aps = [(ap.label, features.extract(ap, baseline))
-               for ap in snap.for_ssid(ssid) if ap.label in (BENIGN, EVIL_TWIN)]
+               for ap in baseline.candidates(snap) if ap.label in (BENIGN, EVIL_TWIN)]
         scans.append((snap.time, aps))
     rows = [signals for _, aps in scans for _, signals in aps]
 
